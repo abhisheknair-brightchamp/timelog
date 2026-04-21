@@ -36,7 +36,9 @@ export default function Home() {
       const session = getSession();
       if (session) {
         setAuth(session.email, session.role, session.employeeId);
-        await fetchAndLoad();
+        // Don't await — Zustand already has data from localStorage.
+        // Sheets sync runs in background and updates state when ready.
+        fetchAndLoad();
       }
       setLoading(false);
     }
@@ -46,7 +48,7 @@ export default function Home() {
   async function handleAuthenticated(data: { email: string; role: string; employeeId?: string | null }) {
     saveSession(data);
     setAuth(data.email, data.role, data.employeeId);
-    await fetchAndLoad();
+    fetchAndLoad(); // background sync, don't block login transition
   }
 
   if (loading) {
