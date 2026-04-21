@@ -84,19 +84,7 @@ export default function Sidebar() {
       {/* BrightChamps Logo */}
       <div style={{ padding: "16px 16px 14px", borderBottom: "0.5px solid rgba(255,255,255,0.07)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {/* Shield + star logo mark */}
-          <svg width="34" height="34" viewBox="0 0 34 34" fill="none" style={{ flexShrink: 0 }}>
-            <path d="M17 2L4 8v10c0 7.5 5.5 14 13 16 7.5-2 13-8.5 13-16V8L17 2z" fill="#4B3DE3"/>
-            <path d="M17 2L4 8v10c0 7.5 5.5 14 13 16 7.5-2 13-8.5 13-16V8L17 2z" fill="url(#sg)"/>
-            <polygon points="17,8 18.8,13.5 24.6,13.5 19.9,16.9 21.7,22.4 17,19 12.3,22.4 14.1,16.9 9.4,13.5 15.2,13.5" fill="white"/>
-            <path d="M12 24l5 3 5-3" stroke="#F5B800" strokeWidth="2" strokeLinecap="round" fill="none"/>
-            <defs>
-              <linearGradient id="sg" x1="4" y1="2" x2="30" y2="34" gradientUnits="userSpaceOnUse">
-                <stop offset="0%" stopColor="#6B5EF5"/>
-                <stop offset="100%" stopColor="#3A2DB8"/>
-              </linearGradient>
-            </defs>
-          </svg>
+          <img src="/BrightCHAMPS-Profile-Logo.jpg" alt="BrightChamps" style={{ width: 34, height: 34, borderRadius: 8, flexShrink: 0, objectFit: "cover" }} />
           <div>
             <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", letterSpacing: "-0.01em", lineHeight: 1.2 }}>
               Bright<span style={{ color: "#F5B800" }}>Track</span>
