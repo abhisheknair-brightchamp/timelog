@@ -50,6 +50,25 @@ function setupSheets() {
   Logger.log("✓ Sheets created");
 }
 
+// ─── Migration: run once to add new columns to existing sheets ────────────────
+function migrateSheets() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // Add messagesJSON column to Queries sheet if missing
+  const qSheet = ss.getSheetByName(SHEETS.QUERIES);
+  if (qSheet) {
+    const headers = qSheet.getRange(1, 1, 1, qSheet.getLastColumn()).getValues()[0];
+    if (!headers.includes("messagesJSON")) {
+      const newCol = qSheet.getLastColumn() + 1;
+      qSheet.getRange(1, newCol).setValue("messagesJSON");
+      qSheet.getRange(1, newCol).setFontWeight("bold").setBackground("#4B3DE3").setFontColor("#ffffff");
+      Logger.log("✓ Added messagesJSON column to Queries sheet at col " + newCol);
+    } else {
+      Logger.log("✓ messagesJSON column already exists");
+    }
+  }
+}
+
 // ─── Utilities ────────────────────────────────────────────────────────────────
 function istNow() {
   return Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd HH:mm:ss 'IST'");
