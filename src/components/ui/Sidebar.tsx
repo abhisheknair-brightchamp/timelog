@@ -72,44 +72,53 @@ export default function Sidebar() {
     }
   }
 
+  const { notifications } = useStore((s) => ({ notifications: s.notifications }));
+  const unreadCount = notifications.filter((n) => n.employeeId === currentEmployeeId && !n.read).length;
+
   return (
     <aside style={{
-      width: 210, flexShrink: 0,
-      background: "#0e1812",
+      width: 220, flexShrink: 0,
+      background: "#16104D",
       display: "flex", flexDirection: "column", height: "100vh",
     }}>
-      {/* Logo */}
-      <div style={{ padding: "18px 16px 14px", borderBottom: "0.5px solid rgba(255,255,255,0.06)" }}>
+      {/* BrightChamps Logo */}
+      <div style={{ padding: "16px 16px 14px", borderBottom: "0.5px solid rgba(255,255,255,0.07)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{
-            width: 30, height: 30, borderRadius: 8, flexShrink: 0,
-            background: "#1D9E75", display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
-              <rect x="1" y="5" width="5" height="9" rx="1.5" fill="white" opacity="0.85"/>
-              <rect x="9" y="1" width="5" height="13" rx="1.5" fill="white"/>
-            </svg>
-          </div>
+          {/* Shield + star logo mark */}
+          <svg width="34" height="34" viewBox="0 0 34 34" fill="none" style={{ flexShrink: 0 }}>
+            <path d="M17 2L4 8v10c0 7.5 5.5 14 13 16 7.5-2 13-8.5 13-16V8L17 2z" fill="#4B3DE3"/>
+            <path d="M17 2L4 8v10c0 7.5 5.5 14 13 16 7.5-2 13-8.5 13-16V8L17 2z" fill="url(#sg)"/>
+            <polygon points="17,8 18.8,13.5 24.6,13.5 19.9,16.9 21.7,22.4 17,19 12.3,22.4 14.1,16.9 9.4,13.5 15.2,13.5" fill="white"/>
+            <path d="M12 24l5 3 5-3" stroke="#F5B800" strokeWidth="2" strokeLinecap="round" fill="none"/>
+            <defs>
+              <linearGradient id="sg" x1="4" y1="2" x2="30" y2="34" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="#6B5EF5"/>
+                <stop offset="100%" stopColor="#3A2DB8"/>
+              </linearGradient>
+            </defs>
+          </svg>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "#fff", letterSpacing: "-0.02em", lineHeight: 1.2 }}>BrightTrack</div>
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginTop: 2 }}>BrightChamps</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", letterSpacing: "-0.01em", lineHeight: 1.2 }}>
+              Bright<span style={{ color: "#F5B800" }}>Track</span>
+            </div>
+            <div style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", marginTop: 2, letterSpacing: "0.04em", textTransform: "uppercase" }}>BrightChamps</div>
           </div>
         </div>
       </div>
 
-      {/* Portal switcher — segmented control */}
-      <div style={{ padding: "10px 10px 8px", borderBottom: "0.5px solid rgba(255,255,255,0.06)" }}>
+      {/* Portal switcher */}
+      <div style={{ padding: "10px 10px 8px", borderBottom: "0.5px solid rgba(255,255,255,0.07)" }}>
         <div style={{
-          display: "flex", gap: 2, padding: 3, borderRadius: 9,
+          display: "flex", gap: 2, padding: 3, borderRadius: 10,
           background: "rgba(255,255,255,0.05)",
         }}>
           {portals.map((p) => (
             <button key={p} onClick={() => setPortal(p)} style={{
-              flex: 1, padding: "5px 2px", fontSize: 11, fontWeight: 500,
-              borderRadius: 7, border: "none", cursor: "pointer",
+              flex: 1, padding: "5px 2px", fontSize: 11, fontWeight: 600,
+              borderRadius: 8, border: "none", cursor: "pointer",
               fontFamily: "var(--font-body)", transition: "all 0.15s",
               background: portal === p ? "#fff" : "transparent",
-              color: portal === p ? "#0e1812" : "rgba(255,255,255,0.4)",
+              color: portal === p ? "#16104D" : "rgba(255,255,255,0.4)",
             }}>
               {portalLabels[p]}
             </button>
@@ -124,35 +133,44 @@ export default function Sidebar() {
           return (
             <button key={item.id} onClick={() => emitPage(item.id)} style={{
               width: "100%", textAlign: "left", padding: "8px 12px",
-              fontSize: 13, borderRadius: 8, border: "none", cursor: "pointer",
-              marginBottom: 1, fontFamily: "var(--font-body)", transition: "all 0.1s",
-              background: active ? "rgba(29,158,117,0.16)" : "transparent",
-              color: active ? "#5DCAA5" : "rgba(255,255,255,0.45)",
-              fontWeight: active ? 500 : 400,
+              fontSize: 13, borderRadius: 9, border: "none", cursor: "pointer",
+              marginBottom: 2, fontFamily: "var(--font-body)", transition: "all 0.1s",
+              background: active ? "rgba(75,61,227,0.22)" : "transparent",
+              color: active ? "#B5B0F5" : "rgba(255,255,255,0.45)",
+              fontWeight: active ? 600 : 400,
+              display: "flex", alignItems: "center", justifyContent: "space-between",
             }}
               onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.05)"; }}
               onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
             >
               {item.label}
+              {item.id === "history" && unreadCount > 0 && (
+                <span style={{
+                  fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 999,
+                  background: "#F5B800", color: "#16104D",
+                }}>
+                  {unreadCount}
+                </span>
+              )}
             </button>
           );
         })}
       </div>
 
       {/* User footer */}
-      <div style={{ padding: "12px 14px", borderTop: "0.5px solid rgba(255,255,255,0.06)" }}>
+      <div style={{ padding: "12px 14px", borderTop: "0.5px solid rgba(255,255,255,0.07)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
           <div style={{
-            width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
+            width: 30, height: 30, borderRadius: "50%", flexShrink: 0,
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 10, fontWeight: 600,
-            background: isAdmin ? "rgba(29,158,117,0.2)" : color.bg,
-            color: isAdmin ? "#5DCAA5" : color.text,
+            fontSize: 10, fontWeight: 700,
+            background: isAdmin ? "rgba(75,61,227,0.3)" : color.bg,
+            color: isAdmin ? "#B5B0F5" : color.text,
           }}>
             {isAdmin ? "AD" : initials(emp?.name || "?")}
           </div>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: 12, fontWeight: 500, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {isAdmin ? "Admin" : emp?.name.split(" ")[0] || currentEmail.split("@")[0]}
             </div>
             <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)" }}>
@@ -160,8 +178,8 @@ export default function Sidebar() {
             </div>
           </div>
           <div style={{
-            fontSize: 9, fontWeight: 500, padding: "2px 7px", borderRadius: 999,
-            background: "rgba(29,158,117,0.18)", color: "#5DCAA5", flexShrink: 0, textTransform: "capitalize",
+            fontSize: 9, fontWeight: 600, padding: "2px 7px", borderRadius: 999,
+            background: "rgba(75,61,227,0.3)", color: "#B5B0F5", flexShrink: 0, textTransform: "capitalize",
           }}>
             {portal}
           </div>
@@ -169,8 +187,8 @@ export default function Sidebar() {
         <button
           onClick={handleLogout}
           style={{
-            width: "100%", padding: "6px 10px", fontSize: 11, fontWeight: 500,
-            borderRadius: 7, border: "0.5px solid rgba(255,255,255,0.1)",
+            width: "100%", padding: "7px 10px", fontSize: 11, fontWeight: 600,
+            borderRadius: 8, border: "0.5px solid rgba(255,255,255,0.1)",
             background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.6)",
             cursor: "pointer", fontFamily: "var(--font-body)", transition: "all 0.1s",
           }}

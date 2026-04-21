@@ -3,21 +3,29 @@
 import { useState } from "react";
 import { useStore } from "@/lib/store";
 import { PageShell, StatCard, Avatar, Chip, DayChip, SectionLabel, Card, Button, showToast } from "@/components/ui";
-import { getDayStatus, todayInTz, tzByIana, fmtIST, getShiftHours, sumShiftHours } from "@/lib/utils";
-import type { Employee, Timesheet } from "@/types";
+import { getDayStatus, todayInTz, tzByIana, fmtIST, getShiftHours, sumShiftHours, TIMEZONES } from "@/lib/utils";
+import type { Employee, Timesheet, TimesheetEntry } from "@/types";
 
 export default function Dashboard() {
-  const { employees, holidays, timesheets, leaves, queries, createQuery, resolveQuery, rejectTimesheet, reverseRejection, resetShift } = useStore((s) => ({
+  const {
+    employees, holidays, timesheets, leaves, queries, config,
+    createQuery, resolveQuery, rejectTimesheet, reverseRejection,
+    resetShift, resetCheckin, resetCheckout, adminAddTimeLog,
+  } = useStore((s) => ({
     employees: s.employees,
     holidays: s.holidays,
     timesheets: s.timesheets,
     leaves: s.leaves,
     queries: s.queries,
+    config: s.config,
     createQuery: s.createQuery,
     resolveQuery: s.resolveQuery,
     rejectTimesheet: s.rejectTimesheet,
     reverseRejection: s.reverseRejection,
     resetShift: s.resetShift,
+    resetCheckin: s.resetCheckin,
+    resetCheckout: s.resetCheckout,
+    adminAddTimeLog: s.adminAddTimeLog,
   }));
 
   const todayIST = todayInTz("Asia/Kolkata");
@@ -41,7 +49,18 @@ export default function Dashboard() {
   const [rejectFor, setRejectFor] = useState<{ tsId: string; empName: string } | null>(null);
   const [rejectReason, setRejectReason] = useState("");
 
-  const [expanded, setExpanded] = useState<string | null>(null); // employeeId whose shifts are expanded
+  const [resetFor, setResetFor] = useState<{ ts: Timesheet; empName: string } | null>(null);
+
+  // Admin add time log modal
+  const [addLogFor, setAddLogFor] = useState<Employee | null>(null);
+  const [addLogDate, setAddLogDate] = useState("");
+  const [addLogCheckin, setAddLogCheckin] = useState("");
+  const [addLogCheckout, setAddLogCheckout] = useState("");
+  const [addLogRows, setAddLogRows] = useState<TimesheetEntry[]>([
+    { vertical: "", note: "", hours: 0 },
+  ]);
+
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   function submitNewQuery() {
     if (!queryFor || !queryText.trim()) { showToast("Enter a question"); return; }
@@ -53,14 +72,44 @@ export default function Dashboard() {
   function confirmReject() {
     if (!rejectFor || !rejectReason.trim()) { showToast("Enter a reason"); return; }
     rejectTimesheet(rejectFor.tsId, rejectReason.trim());
-    showToast(`Shift rejected — ${rejectFor.empName}`);
+    showToast(`Shift rejected`);
     setRejectFor(null); setRejectReason("");
+  }
+
+  function submitAddLog() {
+    if (!addLogFor || !addLogDate || !addLogCheckin || !addLogCheckout) {
+      showToast("Fill all required fields"); return;
+    }
+    const checkinMs = new Date(`${addLogDate}T${addLogCheckin}`).getTime();
+    const checkoutMs = new Date(`${addLogDate}T${addLogCheckout}`).getTime();
+    if (isNaN(checkinMs) || isNaN(checkoutMs)) { showToast("Invalid time"); return; }
+    if (checkoutMs <= checkinMs) { showToast("Check-out must be after check-in"); return; }
+    const filled = addLogRows.filter((r) => r.hours > 0);
+    adminAddTimeLog(addLogFor.id, addLogDate, checkinMs, checkoutMs, filled);
+    showToast(`Time log added for ${addLogFor.name}`);
+    setAddLogFor(null);
+    setAddLogDate(""); setAddLogCheckin(""); setAddLogCheckout("");
+    setAddLogRows([{ vertical: "", note: "", hours: 0 }]);
   }
 
   const openQueries = queries.filter((q) => q.status === "open");
 
   return (
-    <PageShell title="Dashboard" subtitle={`Team overview — ${dateLabel} IST`}>
+    <PageShell
+      title="Dashboard"
+      subtitle={`Team overview — ${dateLabel} IST`}
+      actions={
+        <Button variant="primary" size="sm" onClick={() => {
+          setAddLogFor(employees[0] || null);
+          setAddLogDate(todayIST);
+          setAddLogCheckin("09:00");
+          setAddLogCheckout("17:00");
+          setAddLogRows([{ vertical: config.verticals[0] || "", note: "", hours: 0 }]);
+        }}>
+          + Add time log
+        </Button>
+      }
+    >
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10, marginBottom: 20 }}>
         <StatCard label="Total teachers"   value={workers.length} />
         <StatCard label="Submitted today"  value={submitted} color="var(--c-brand-dark)" />
@@ -162,11 +211,20 @@ export default function Dashboard() {
                       )}
                     </td>
                     <td>
-                      {todayShifts.length > 0 && (
-                        <Button size="xs" onClick={() => setExpanded(isOpen ? null : e.id)}>
-                          {isOpen ? "Hide shifts ▲" : `View ${todayShifts.length} shift${todayShifts.length === 1 ? "" : "s"} ▼`}
-                        </Button>
-                      )}
+                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                        {todayShifts.length > 0 && (
+                          <Button size="xs" onClick={() => setExpanded(isOpen ? null : e.id)}>
+                            {isOpen ? "Hide ▲" : `${todayShifts.length} shift${todayShifts.length === 1 ? "" : "s"} ▼`}
+                          </Button>
+                        )}
+                        <Button size="xs" onClick={() => {
+                          setAddLogFor(e);
+                          setAddLogDate(todayIST);
+                          setAddLogCheckin("09:00");
+                          setAddLogCheckout("17:00");
+                          setAddLogRows([{ vertical: config.verticals[0] || "", note: "", hours: 0 }]);
+                        }}>+ Log</Button>
+                      </div>
                     </td>
                   </tr>
                   {isOpen && todayShifts.map((ts) => (
@@ -179,7 +237,7 @@ export default function Dashboard() {
                           onQuery={() => { setQueryFor({ tsId: ts.id, empId: e.id, empName: e.name }); setQueryText(""); }}
                           onReject={() => { setRejectFor({ tsId: ts.id, empName: e.name }); setRejectReason(""); }}
                           onReverse={() => { reverseRejection(ts.id); showToast("Rejection reversed"); }}
-                          onReset={() => { if (confirm(`Reset this shift for ${e.name}? This permanently removes the shift record.`)) { resetShift(ts.id); showToast("Shift reset"); } }}
+                          onReset={() => setResetFor({ ts, empName: e.name })}
                         />
                       </td>
                     </tr>
@@ -191,6 +249,7 @@ export default function Dashboard() {
         </table>
       </Card>
 
+      {/* Query modal */}
       {queryFor && (
         <Modal onClose={() => setQueryFor(null)}>
           <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Question for {queryFor.empName}</div>
@@ -203,10 +262,11 @@ export default function Dashboard() {
         </Modal>
       )}
 
+      {/* Reject modal */}
       {rejectFor && (
         <Modal onClose={() => setRejectFor(null)}>
           <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Reject shift — {rejectFor.empName}</div>
-          <div style={{ fontSize: 12, color: "var(--c-text-3)", marginBottom: 12 }}>Hours from this shift will be excluded from the employee's accepted totals. You can reverse this later.</div>
+          <div style={{ fontSize: 12, color: "var(--c-text-3)", marginBottom: 12 }}>Hours from this shift will be excluded from totals. You can reverse this later.</div>
           <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Reason (shown to employee)…" autoFocus style={modalTextarea} />
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <Button size="sm" onClick={() => setRejectFor(null)}>Cancel</Button>
@@ -214,7 +274,139 @@ export default function Dashboard() {
           </div>
         </Modal>
       )}
+
+      {/* Reset options modal */}
+      {resetFor && (
+        <Modal onClose={() => setResetFor(null)}>
+          <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Reset shift — {resetFor.empName}</div>
+          <div style={{ fontSize: 12, color: "var(--c-text-3)", marginBottom: 16 }}>Choose what to reset. The employee will be notified.</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+            <ResetOption
+              title="Reset check-in only"
+              description="Clears the check-in time. Employee needs to clock in again."
+              onClick={() => {
+                resetCheckin(resetFor.ts.id);
+                showToast(`Check-in reset for ${resetFor.empName}`);
+                setResetFor(null);
+              }}
+            />
+            <ResetOption
+              title="Reset check-out only"
+              description="Reverts the shift to in-progress. Employee needs to clock out again."
+              onClick={() => {
+                resetCheckout(resetFor.ts.id);
+                showToast(`Check-out reset for ${resetFor.empName}`);
+                setResetFor(null);
+              }}
+            />
+            <ResetOption
+              title="Reset both (full reset)"
+              description="Permanently removes this shift record entirely."
+              danger
+              onClick={() => {
+                resetShift(resetFor.ts.id);
+                showToast(`Shift fully reset for ${resetFor.empName}`);
+                setResetFor(null);
+              }}
+            />
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <Button size="sm" onClick={() => setResetFor(null)}>Cancel</Button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Admin add time log modal */}
+      {addLogFor && (
+        <Modal onClose={() => setAddLogFor(null)}>
+          <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Add time log manually</div>
+          <div style={{ fontSize: 12, color: "var(--c-text-3)", marginBottom: 14 }}>Add a time log on behalf of an employee for any date.</div>
+
+          <div style={{ marginBottom: 12 }}>
+            <label style={labelStyle}>Employee *</label>
+            <select
+              value={addLogFor.id}
+              onChange={(e) => setAddLogFor(employees.find((x) => x.id === e.target.value) || null)}
+              style={{ width: "100%", marginBottom: 0 }}
+            >
+              {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </select>
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <label style={labelStyle}>Date *</label>
+            <input type="date" value={addLogDate} onChange={(e) => setAddLogDate(e.target.value)} />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={labelStyle}>Check-in time *</label>
+              <input type="time" value={addLogCheckin} onChange={(e) => setAddLogCheckin(e.target.value)} />
+            </div>
+            <div>
+              <label style={labelStyle}>Check-out time *</label>
+              <input type="time" value={addLogCheckout} onChange={(e) => setAddLogCheckout(e.target.value)} />
+            </div>
+          </div>
+
+          {addLogCheckin && addLogCheckout && addLogDate && (
+            <div style={{ fontSize: 11, color: "var(--c-brand-dark)", marginBottom: 12, padding: "6px 10px", background: "var(--c-brand-light)", borderRadius: "var(--r-sm)" }}>
+              {(() => {
+                const h = (new Date(`${addLogDate}T${addLogCheckout}`).getTime() - new Date(`${addLogDate}T${addLogCheckin}`).getTime()) / 3600000;
+                return h > 0 ? `${h.toFixed(2)}h will be captured` : "⚠ Check-out must be after check-in";
+              })()}
+            </div>
+          )}
+
+          <div style={{ marginBottom: 12 }}>
+            <label style={labelStyle}>Breakdown (optional)</label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 70px 28px", gap: 6, marginBottom: 4 }}>
+              {["Vertical", "Note", "Hrs", ""].map((h) => (
+                <span key={h} style={{ fontSize: 10, color: "var(--c-text-3)", fontWeight: 500, textTransform: "uppercase" }}>{h}</span>
+              ))}
+            </div>
+            {addLogRows.map((row, ri) => (
+              <div key={ri} style={{ display: "grid", gridTemplateColumns: "1fr 2fr 70px 28px", gap: 6, marginBottom: 6, alignItems: "center" }}>
+                <select value={row.vertical} onChange={(e) => setAddLogRows((r) => r.map((x, i) => i === ri ? { ...x, vertical: e.target.value } : x))}>
+                  <option value="">—</option>
+                  {config.verticals.map((v) => <option key={v}>{v}</option>)}
+                </select>
+                <input type="text" value={row.note} placeholder="Description…" onChange={(e) => setAddLogRows((r) => r.map((x, i) => i === ri ? { ...x, note: e.target.value } : x))} />
+                <input type="number" value={row.hours || ""} placeholder="0" min={0.25} step={0.25} onChange={(e) => setAddLogRows((r) => r.map((x, i) => i === ri ? { ...x, hours: parseFloat(e.target.value) || 0 } : x))} />
+                {addLogRows.length > 1
+                  ? <button onClick={() => setAddLogRows((r) => r.filter((_, i) => i !== ri))} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "var(--c-text-3)", padding: 0 }}>×</button>
+                  : <span />}
+              </div>
+            ))}
+            <Button size="xs" onClick={() => setAddLogRows((r) => [...r, { vertical: config.verticals[0] || "", note: "", hours: 0 }])}>+ Row</Button>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <Button size="sm" onClick={() => setAddLogFor(null)}>Cancel</Button>
+            <Button variant="primary" size="sm" onClick={submitAddLog}>Add time log</Button>
+          </div>
+        </Modal>
+      )}
     </PageShell>
+  );
+}
+
+function ResetOption({ title, description, danger, onClick }: {
+  title: string; description: string; danger?: boolean; onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        textAlign: "left", padding: "10px 12px", borderRadius: "var(--r-md)", cursor: "pointer",
+        border: `0.5px solid ${danger ? "#F09595" : "var(--c-border-strong)"}`,
+        background: danger ? "#FEF6F6" : "var(--c-bg)",
+        fontFamily: "var(--font-body)", transition: "all 0.1s",
+      }}
+    >
+      <div style={{ fontSize: 13, fontWeight: 500, color: danger ? "#A32D2D" : "var(--c-text)", marginBottom: 2 }}>{title}</div>
+      <div style={{ fontSize: 11, color: danger ? "#A32D2D" : "var(--c-text-3)", opacity: 0.8 }}>{description}</div>
+    </button>
   );
 }
 
@@ -244,8 +436,8 @@ function ShiftRow({ ts, tz, empName, onQuery, onReject, onReverse, onReset }: {
               <Button size="xs" variant="danger" onClick={onReject}>Reject</Button>
             </>
           )}
-          {rejected && <Button size="xs" onClick={onReverse}>Reverse</Button>}
-          <Button size="xs" variant="danger" onClick={onReset}>Reset</Button>
+          {rejected && <Button size="xs" onClick={onReverse}>↩ Reverse</Button>}
+          <Button size="xs" variant="danger" onClick={onReset}>Reset…</Button>
         </div>
       </div>
       {rejected && ts.rejectionReason && (
@@ -278,7 +470,7 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 9998, display: "flex", alignItems: "center", justifyContent: "center" }}
       onClick={onClose}
     >
-      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: "var(--r-lg)", padding: 20, width: "100%", maxWidth: 480, boxShadow: "0 12px 40px rgba(0,0,0,0.2)" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: "var(--r-lg)", padding: 20, width: "100%", maxWidth: 520, boxShadow: "0 12px 40px rgba(0,0,0,0.2)", maxHeight: "90vh", overflowY: "auto" }}>
         {children}
       </div>
     </div>
@@ -289,4 +481,8 @@ const modalTextarea: React.CSSProperties = {
   width: "100%", minHeight: 80, padding: 10, fontSize: 13,
   border: "0.5px solid var(--c-border-strong)", borderRadius: "var(--r-sm)",
   fontFamily: "inherit", resize: "vertical", marginBottom: 12,
+};
+
+const labelStyle: React.CSSProperties = {
+  fontSize: 11, color: "var(--c-text-2)", display: "block", marginBottom: 4,
 };

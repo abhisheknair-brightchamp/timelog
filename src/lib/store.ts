@@ -13,6 +13,8 @@ import type {
   OrgConfig,
   Portal,
   AuditType,
+  EmployeeNotification,
+  NotificationType,
 } from "@/types";
 
 interface AppState {
@@ -59,6 +61,9 @@ interface AppState {
   rejectTimesheet: (tsId: string, reason: string) => void;
   reverseRejection: (tsId: string) => void;
   resetShift: (tsId: string) => void;
+  resetCheckin: (tsId: string) => void;
+  resetCheckout: (tsId: string) => void;
+  adminAddTimeLog: (empId: string, date: string, checkinMs: number, checkoutMs: number, entries: TimesheetEntry[]) => void;
 
   // Leaves
   leaves: LeaveRequest[];
@@ -71,6 +76,11 @@ interface AppState {
   createQuery: (timesheetId: string, employeeId: string, question: string) => void;
   respondQuery: (queryId: string, response: string) => void;
   resolveQuery: (queryId: string) => void;
+
+  // Notifications
+  notifications: EmployeeNotification[];
+  addNotification: (empId: string, type: NotificationType, message: string, tsDate?: string) => void;
+  markNotificationsRead: (empId: string) => void;
 
   // Audit
   auditLog: AuditEntry[];
@@ -406,6 +416,11 @@ export const useStore = create<AppState>()(
           emp?.name || ts.employeeId,
           `Rejected shift for ${ts.date}${reason ? ` — ${reason}` : ""}`
         );
+        get().addNotification(
+          ts.employeeId, "reject",
+          `Your shift on ${ts.date} was rejected by ${actorName}${reason ? `: ${reason}` : ""}`,
+          ts.date
+        );
         sheetsPost(get().config.sheetsUrl, "rejectTimesheet", {
           id: tsId,
           reason,
@@ -429,12 +444,18 @@ export const useStore = create<AppState>()(
           timesheets: s.timesheets.map((t) => (t.id === tsId ? updated : t)),
         }));
         const actorId = get().currentEmployeeId;
+        const actorName = actorId === "admin" ? "Admin" : (get().employees.find((e) => e.id === actorId)?.name || actorId);
         const emp = get().employees.find((e) => e.id === ts.employeeId);
         get().addAudit(
           "timesheet",
           actorId,
           emp?.name || ts.employeeId,
           `Reversed rejection on shift for ${ts.date}`
+        );
+        get().addNotification(
+          ts.employeeId, "reverse",
+          `The rejection on your shift for ${ts.date} was reversed by ${actorName} — your hours are now accepted`,
+          ts.date
         );
         sheetsPost(get().config.sheetsUrl, "reverseRejection", { id: tsId });
       },
@@ -443,14 +464,96 @@ export const useStore = create<AppState>()(
         if (!ts) return;
         set((s) => ({ timesheets: s.timesheets.filter((t) => t.id !== tsId) }));
         const actorId = get().currentEmployeeId;
+        const actorName = actorId === "admin" ? "Admin" : (get().employees.find((e) => e.id === actorId)?.name || actorId);
         const emp = get().employees.find((e) => e.id === ts.employeeId);
         get().addAudit(
           "timesheet",
           actorId,
           emp?.name || ts.employeeId,
-          `Reset shift for ${ts.date}${ts.startedAt ? ` (started ${new Date(ts.startedAt).toISOString()})` : ""}`
+          `Reset (full) shift for ${ts.date}`
+        );
+        get().addNotification(
+          ts.employeeId, "reset",
+          `Your shift record for ${ts.date} was fully reset by ${actorName} — please re-log your hours`,
+          ts.date
         );
         sheetsPost(get().config.sheetsUrl, "resetShift", { id: tsId });
+      },
+      resetCheckin: (tsId) => {
+        const ts = get().timesheets.find((t) => t.id === tsId);
+        if (!ts) return;
+        const updated: Timesheet = {
+          ...ts,
+          startedAt: undefined,
+          endedAt: undefined,
+          totalHours: 0,
+          capturedHours: 0,
+          submitted: false,
+          submittedAt: undefined,
+          status: "in-progress",
+        };
+        set((s) => ({ timesheets: s.timesheets.map((t) => (t.id === tsId ? updated : t)) }));
+        const actorId = get().currentEmployeeId;
+        const actorName = actorId === "admin" ? "Admin" : (get().employees.find((e) => e.id === actorId)?.name || actorId);
+        const emp = get().employees.find((e) => e.id === ts.employeeId);
+        get().addAudit("timesheet", actorId, emp?.name || ts.employeeId, `Reset check-in for shift on ${ts.date}`);
+        get().addNotification(
+          ts.employeeId, "reset",
+          `Your check-in time for ${ts.date} was reset by ${actorName} — please clock in again`,
+          ts.date
+        );
+        sheetsPost(get().config.sheetsUrl, "resetCheckin", { id: tsId });
+      },
+      resetCheckout: (tsId) => {
+        const ts = get().timesheets.find((t) => t.id === tsId);
+        if (!ts) return;
+        const updated: Timesheet = {
+          ...ts,
+          endedAt: undefined,
+          totalHours: 0,
+          capturedHours: 0,
+          submitted: false,
+          submittedAt: undefined,
+          status: "in-progress",
+        };
+        set((s) => ({ timesheets: s.timesheets.map((t) => (t.id === tsId ? updated : t)) }));
+        const actorId = get().currentEmployeeId;
+        const actorName = actorId === "admin" ? "Admin" : (get().employees.find((e) => e.id === actorId)?.name || actorId);
+        const emp = get().employees.find((e) => e.id === ts.employeeId);
+        get().addAudit("timesheet", actorId, emp?.name || ts.employeeId, `Reset check-out for shift on ${ts.date}`);
+        get().addNotification(
+          ts.employeeId, "reset",
+          `Your check-out time for ${ts.date} was reset by ${actorName} — please clock out again`,
+          ts.date
+        );
+        sheetsPost(get().config.sheetsUrl, "resetCheckout", { id: tsId });
+      },
+      adminAddTimeLog: (empId, date, checkinMs, checkoutMs, entries) => {
+        const capturedHours = Math.round(Math.max(0, (checkoutMs - checkinMs) / 3600000) * 100) / 100;
+        const emp = get().employees.find((e) => e.id === empId);
+        const ts: Timesheet = {
+          id: uid(),
+          employeeId: empId,
+          date,
+          entries,
+          totalHours: capturedHours,
+          capturedHours,
+          submitted: true,
+          submittedAt: Date.now(),
+          submittedFromTz: emp?.timezone || "Asia/Kolkata",
+          startedAt: checkinMs,
+          endedAt: checkoutMs,
+          status: "submitted",
+        };
+        set((s) => ({ timesheets: [...s.timesheets, ts] }));
+        const actorId = get().currentEmployeeId;
+        get().addAudit(
+          "timesheet",
+          actorId,
+          emp?.name || empId,
+          `Admin manually added time log for ${date} — ${capturedHours.toFixed(2)}h`
+        );
+        sheetsPost(get().config.sheetsUrl, "submitTimesheet", ts);
       },
 
       leaves: [],
@@ -487,7 +590,13 @@ export const useStore = create<AppState>()(
         };
         set((s) => ({ queries: [q, ...s.queries] }));
         const emp = get().employees.find((e) => e.id === employeeId);
+        const ts = get().timesheets.find((t) => t.id === timesheetId);
         get().addAudit("query", actorId, emp?.name || employeeId, `Raised query on ${emp?.name || employeeId}'s timesheet: "${question}"`);
+        get().addNotification(
+          employeeId, "query",
+          `${actorName} has a question about your shift${ts?.date ? ` on ${ts.date}` : ""}: "${question}"`,
+          ts?.date
+        );
         sheetsPost(get().config.sheetsUrl, "createQuery", q);
       },
       respondQuery: (queryId, response) => {
@@ -508,6 +617,22 @@ export const useStore = create<AppState>()(
         const emp = get().employees.find((e) => e.id === q.employeeId);
         get().addAudit("query", actorId, emp?.name || q.employeeId, `Resolved query on ${emp?.name || q.employeeId}'s timesheet`);
         sheetsPost(get().config.sheetsUrl, "resolveQuery", { id: queryId, resolvedAt: updated.resolvedAt });
+      },
+
+      notifications: [],
+      addNotification: (empId, type, message, tsDate) => {
+        const n: EmployeeNotification = {
+          id: uid(), employeeId: empId, type, message,
+          createdAt: Date.now(), read: false, timesheetDate: tsDate,
+        };
+        set((s) => ({ notifications: [n, ...s.notifications] }));
+      },
+      markNotificationsRead: (empId) => {
+        set((s) => ({
+          notifications: s.notifications.map((n) =>
+            n.employeeId === empId ? { ...n, read: true } : n
+          ),
+        }));
       },
 
       auditLog: [],

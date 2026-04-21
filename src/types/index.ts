@@ -104,3 +104,15 @@ export interface TimesheetQuery {
   respondedAt?: number; // UTC ms
   resolvedAt?: number; // UTC ms
 }
+
+export type NotificationType = "query" | "reject" | "reset" | "reverse";
+
+export interface EmployeeNotification {
+  id: string;
+  employeeId: string;
+  type: NotificationType;
+  message: string;
+  createdAt: number; // UTC ms
+  read: boolean;
+  timesheetDate?: string;
+}

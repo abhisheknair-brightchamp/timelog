@@ -1,30 +1,31 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,400;0,500;0,600;0,700;1,400&family=DM+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --font-body: 'DM Sans', system-ui, sans-serif;
+  --font-body: 'Nunito', system-ui, sans-serif;
   --font-mono: 'DM Mono', monospace;
 
-  --c-brand: #1D9E75;
-  --c-brand-light: #E1F5EE;
-  --c-brand-dark: #0F6E56;
-  --c-brand-border: #9FE1CB;
+  /* BrightChamps brand — indigo/purple */
+  --c-brand: #4B3DE3;
+  --c-brand-light: #EEEDFE;
+  --c-brand-dark: #3328C0;
+  --c-brand-border: #B5B0F5;
 
   --c-surface: #ffffff;
-  --c-bg: #F7F6F3;
-  --c-border: rgba(0,0,0,0.08);
-  --c-border-strong: rgba(0,0,0,0.14);
+  --c-bg: #F7F6FD;
+  --c-border: rgba(75,61,227,0.08);
+  --c-border-strong: rgba(75,61,227,0.16);
 
-  --c-text: #1a1a18;
-  --c-text-2: #5c5c58;
-  --c-text-3: #9b9b96;
+  --c-text: #1a1830;
+  --c-text-2: #52506e;
+  --c-text-3: #9b99b2;
 
-  --r-sm: 6px;
-  --r-md: 10px;
-  --r-lg: 14px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
 }
 
 * { box-sizing: border-box; }
@@ -65,29 +66,29 @@ input:disabled, select:disabled {
 }
 
 /* Chip variants */
-.chip { display: inline-block; font-size: 10px; font-weight: 500; padding: 2px 8px; border-radius: 999px; white-space: nowrap; line-height: 1.5; }
-.chip-green { background: #E1F5EE; color: #0F6E56; }
+.chip { display: inline-block; font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; line-height: 1.5; }
+.chip-green { background: #E3F9EE; color: #0D7A4E; }
 .chip-blue  { background: #E6F1FB; color: #185FA5; }
-.chip-amber { background: #FAEEDA; color: #854F0B; }
+.chip-amber { background: #FFF0D6; color: #92560A; }
 .chip-red   { background: #FCEBEB; color: #A32D2D; }
 .chip-purple{ background: #EEEDFE; color: #3C3489; }
-.chip-gray  { background: #F1EFE8; color: #5F5E5A; border: 0.5px solid #D3D1C7; }
+.chip-gray  { background: #F0EFF8; color: #6260A0; border: 0.5px solid #D4D2F0; }
 
 /* Button base */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  padding: 7px 14px; font-size: 13px; font-weight: 500; font-family: var(--font-body);
-  border-radius: var(--r-sm); border: 0.5px solid var(--c-border-strong);
+  padding: 7px 16px; font-size: 13px; font-weight: 600; font-family: var(--font-body);
+  border-radius: var(--r-md); border: 0.5px solid var(--c-border-strong);
   background: #fff; color: var(--c-text);
-  cursor: pointer; transition: background 0.12s, opacity 0.12s;
+  cursor: pointer; transition: background 0.12s, opacity 0.12s, box-shadow 0.12s;
   line-height: 1;
 }
-.btn:hover { background: var(--c-bg); }
-.btn-primary { background: var(--c-brand); color: #fff; border-color: var(--c-brand); }
+.btn:hover { background: var(--c-bg); box-shadow: 0 2px 8px rgba(75,61,227,0.08); }
+.btn-primary { background: var(--c-brand); color: #fff; border-color: var(--c-brand); box-shadow: 0 2px 8px rgba(75,61,227,0.25); }
 .btn-primary:hover { opacity: 0.88; background: var(--c-brand); }
 .btn-danger  { background: #FCEBEB; color: #A32D2D; border-color: #F09595; }
-.btn-sm { padding: 4px 10px; font-size: 11px; }
-.btn-xs { padding: 3px 8px; font-size: 10px; }
+.btn-sm { padding: 5px 12px; font-size: 12px; }
+.btn-xs { padding: 3px 9px; font-size: 10px; }
 
 /* Card */
 .card {

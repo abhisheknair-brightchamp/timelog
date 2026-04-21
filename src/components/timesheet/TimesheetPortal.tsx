@@ -330,11 +330,13 @@ function ShiftCard({ ts, tz }: { ts: Timesheet; tz: string }) {
 
 // ─── My History — shifts grouped by date + admin queries ──────────────────────
 function MyHistory() {
-  const { employees, holidays, timesheets, leaves, queries, currentEmployeeId, respondQuery } = useStore((s) => ({
+  const { employees, holidays, timesheets, leaves, queries, notifications, currentEmployeeId, respondQuery, markNotificationsRead } = useStore((s) => ({
     employees: s.employees, holidays: s.holidays,
     timesheets: s.timesheets, leaves: s.leaves, queries: s.queries,
+    notifications: s.notifications,
     currentEmployeeId: s.currentEmployeeId,
     respondQuery: s.respondQuery,
+    markNotificationsRead: s.markNotificationsRead,
   }));
 
   const emp = employees.find((e) => e.id === currentEmployeeId)!;
@@ -369,6 +371,12 @@ function MyHistory() {
   const acceptedShifts = myShifts.filter((t) => t.status !== "rejected");
   const totalHours = sumShiftHours(acceptedShifts);
 
+  const myNotifications = notifications
+    .filter((n) => n.employeeId === currentEmployeeId)
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, 10);
+  const unreadNotifications = myNotifications.filter((n) => !n.read);
+
   const myQueries = queries.filter((q) => q.employeeId === currentEmployeeId);
   const openQueries = myQueries.filter((q) => q.status === "open" && !q.response);
 
@@ -383,8 +391,65 @@ function MyHistory() {
     showToast("Response sent");
   }
 
+  const notifColors: Record<string, { bg: string; color: string; label: string }> = {
+    query:   { bg: "#FAEEDA", color: "#854F0B", label: "Question" },
+    reject:  { bg: "#FCEBEB", color: "#A32D2D", label: "Rejected" },
+    reset:   { bg: "#EEEDFE", color: "#3C3489", label: "Reset" },
+    reverse: { bg: "#E1F5EE", color: "#0F6E56", label: "Reinstated" },
+  };
+
   return (
     <PageShell title="My history" subtitle="Monthly overview, submitted shifts, and admin queries">
+
+      {myNotifications.length > 0 && (
+        <>
+          <SectionLabel mt={0}>
+            Notifications
+            {unreadNotifications.length > 0 && (
+              <span style={{
+                marginLeft: 8, fontSize: 9, fontWeight: 600, padding: "1px 7px",
+                borderRadius: 999, background: "#A32D2D", color: "#fff",
+              }}>
+                {unreadNotifications.length} new
+              </span>
+            )}
+            {unreadNotifications.length > 0 && (
+              <button
+                onClick={() => markNotificationsRead(currentEmployeeId)}
+                style={{ marginLeft: 10, fontSize: 9, color: "var(--c-brand)", background: "none", border: "none", cursor: "pointer", fontFamily: "var(--font-body)", textDecoration: "underline" }}
+              >
+                Mark all read
+              </button>
+            )}
+          </SectionLabel>
+          <Card>
+            {myNotifications.map((n) => {
+              const nc = notifColors[n.type] || notifColors.query;
+              return (
+                <div key={n.id} style={{
+                  display: "flex", alignItems: "flex-start", gap: 10,
+                  padding: "8px 0", borderBottom: "0.5px solid var(--c-border)",
+                  opacity: n.read ? 0.55 : 1,
+                }}>
+                  <span style={{
+                    fontSize: 9, fontWeight: 600, padding: "2px 7px", borderRadius: 999, flexShrink: 0,
+                    background: nc.bg, color: nc.color, marginTop: 1,
+                  }}>
+                    {nc.label}
+                  </span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, color: "var(--c-text)", lineHeight: 1.4 }}>{n.message}</div>
+                    <div style={{ fontSize: 10, color: "var(--c-text-3)", marginTop: 3 }}>
+                      {new Date(n.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true })}
+                    </div>
+                  </div>
+                  {!n.read && <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#A32D2D", flexShrink: 0, marginTop: 4 }} />}
+                </div>
+              );
+            })}
+          </Card>
+        </>
+      )}
 
       {openQueries.length > 0 && (
         <>
