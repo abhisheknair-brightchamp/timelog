@@ -89,6 +89,7 @@ const TYPE_COLOR: Record<AuditType, { bg: string; color: string; label: string }
   timesheet: { bg: "#E1F5EE", color: "#0F6E56", label: "Timesheet" },
   config:    { bg: "#FAEEDA", color: "#854F0B", label: "Config" },
   onboard:   { bg: "#EEEDFE", color: "#3C3489", label: "Onboard" },
+  query:     { bg: "#FBEAF0", color: "#993556", label: "Query" },
 };
 
 export function AuditLog() {

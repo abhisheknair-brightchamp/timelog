@@ -18,6 +18,7 @@ const SHEETS = {
   USERS:            "Users",
   SESSIONS:         "Sessions",
   LEAVES:           "Leaves",
+  QUERIES:          "Queries",
 };
 
 const ADMIN_EMAIL = "abhishek.nair@brightchamps.com";
@@ -27,7 +28,7 @@ function setupSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const defs = {
     [SHEETS.EMPLOYEES]: ["id","name","email","role","verticals","timezone","weekoffs","minHoursPerDay","active","createdAt_UTC","createdAt_IST"],
-    [SHEETS.TIMESHEETS]: ["id","employeeId","employeeName","date","totalHours","submitted","submittedAt_UTC","submittedAt_IST","submittedFromTz","entryCount"],
+    [SHEETS.TIMESHEETS]: ["id","employeeId","employeeName","date","totalHours","submitted","submittedAt_UTC","submittedAt_IST","submittedFromTz","entryCount","startedAt_UTC","endedAt_UTC","status"],
     [SHEETS.TIMESHEET_ENTRIES]: ["timesheetId","employeeId","date","vertical","note","hours"],
     [SHEETS.AUDIT]: ["id","timestamp_UTC","timestamp_IST","type","actorId","actorName","subject","action","diffJSON"],
     [SHEETS.CONFIG]: ["key","value","updatedAt_IST"],
@@ -35,6 +36,7 @@ function setupSheets() {
     [SHEETS.USERS]: ["email","passwordHash","role","createdAt_UTC","createdAt_IST"],
     [SHEETS.SESSIONS]: ["email","otp","expiresAt_UTC","createdAt_UTC"],
     [SHEETS.LEAVES]: ["id","employeeId","date","type","note","appliedAt_UTC","appliedAt_IST"],
+    [SHEETS.QUERIES]: ["id","timesheetId","employeeId","byActorId","byActorName","question","response","status","createdAt_UTC","createdAt_IST","respondedAt_UTC","resolvedAt_UTC"],
   };
   Object.entries(defs).forEach(([name, headers]) => {
     let sheet = ss.getSheetByName(name);
@@ -107,6 +109,10 @@ function doPost(e) {
       // Leaves
       applyLeave:       handleApplyLeave,
       cancelLeave:      handleCancelLeave,
+      // Queries
+      createQuery:      handleCreateQuery,
+      respondQuery:     handleRespondQuery,
+      resolveQuery:     handleResolveQuery,
     };
     if (!handlers[action]) return jsonResponse({ ok: false, error: "Unknown action: " + action });
     const result = handlers[action](data);
@@ -272,9 +278,20 @@ function handleSubmitTimesheet(ts) {
   for (let i = 1; i < rows.length; i++) {
     if (rows[i][1] === ts.employeeId && rows[i][3] === ts.date) { rowIdx = i + 1; break; }
   }
-  const tsRow = [tsId, ts.employeeId, ts.employeeName || "", ts.date, ts.totalHours, ts.submitted ? "TRUE" : "FALSE", ts.submittedAt || Date.now(), toIST(ts.submittedAt || Date.now()), ts.submittedFromTz || "", (ts.entries || []).length];
+  const tsRow = [
+    tsId, ts.employeeId, ts.employeeName || "", ts.date, ts.totalHours || 0,
+    ts.submitted ? "TRUE" : "FALSE",
+    ts.submittedAt || "", toIST(ts.submittedAt || 0),
+    ts.submittedFromTz || "", (ts.entries || []).length,
+    ts.startedAt || "", ts.endedAt || "", ts.status || (ts.submitted ? "submitted" : "in-progress"),
+  ];
   if (rowIdx > 0) {
     sheet.getRange(rowIdx, 1, 1, tsRow.length).setValues([tsRow]);
+    // Remove prior entries for this ts and re-append fresh
+    const erows = entrySheet.getDataRange().getValues();
+    for (let i = erows.length - 1; i > 0; i--) {
+      if (erows[i][0] === tsId) entrySheet.deleteRow(i + 1);
+    }
   } else {
     sheet.appendRow(tsRow);
   }
@@ -382,6 +399,49 @@ function handleCancelLeave(data) {
   return { ok: false, error: "Leave not found" };
 }
 
+// ─── QUERIES ─────────────────────────────────────────────────────────────────
+
+function handleCreateQuery(q) {
+  const sheet = getSheet(SHEETS.QUERIES);
+  if (!sheet) return { ok: false, error: "Queries sheet missing — re-run setupSheets()" };
+  const now = q.createdAt || Date.now();
+  sheet.appendRow([
+    q.id || uid(), q.timesheetId, q.employeeId,
+    q.byActorId, q.byActorName || "",
+    q.question, q.response || "", q.status || "open",
+    now, toIST(now), "", "",
+  ]);
+  return { ok: true };
+}
+
+function handleRespondQuery(data) {
+  const sheet = getSheet(SHEETS.QUERIES);
+  if (!sheet) return { ok: false, error: "Queries sheet missing" };
+  const rows = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][0] === data.id) {
+      sheet.getRange(i + 1, 7).setValue(data.response || "");
+      sheet.getRange(i + 1, 11).setValue(data.respondedAt || Date.now());
+      return { ok: true };
+    }
+  }
+  return { ok: false, error: "Query not found" };
+}
+
+function handleResolveQuery(data) {
+  const sheet = getSheet(SHEETS.QUERIES);
+  if (!sheet) return { ok: false, error: "Queries sheet missing" };
+  const rows = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][0] === data.id) {
+      sheet.getRange(i + 1, 8).setValue("resolved");
+      sheet.getRange(i + 1, 12).setValue(data.resolvedAt || Date.now());
+      return { ok: true };
+    }
+  }
+  return { ok: false, error: "Query not found" };
+}
+
 // ─── GET helpers ──────────────────────────────────────────────────────────────
 
 function getAllData() {
@@ -393,6 +453,7 @@ function getAllData() {
     config: sheetToObjects(SHEETS.CONFIG),
     auditLog: sheetToObjects(SHEETS.AUDIT),
     leaves: sheetToObjects(SHEETS.LEAVES),
+    queries: sheetToObjects(SHEETS.QUERIES),
   };
 }
 

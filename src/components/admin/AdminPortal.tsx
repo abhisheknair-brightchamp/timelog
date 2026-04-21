@@ -9,9 +9,11 @@ import RolesVerticals from "./RolesVerticals";
 import HolidaysPage from "./HolidaysPage";
 import AuditLog from "./AuditLog";
 import SettingsPage from "./SettingsPage";
+import Analytics from "./Analytics";
 
 const PAGE_MAP: Record<string, React.ComponentType> = {
   dashboard: Dashboard,
+  analytics: Analytics,
   team: TeamView,
   employees: Employees,
   roles: RolesVerticals,

@@ -1,6 +1,6 @@
 "use client";
 // src/components/timesheet/TimesheetPortal.tsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useStore } from "@/lib/store";
 import {
   PageShell, SectionLabel, Card, Button, InfoBanner,
@@ -9,7 +9,7 @@ import {
 import {
   getDayStatus, todayInTz, TIMEZONES, fmtIST, empColor, initials,
 } from "@/lib/utils";
-import type { DayStatus, TimesheetEntry, LeaveType } from "@/types";
+import type { DayStatus, TimesheetEntry, LeaveType, Timesheet } from "@/types";
 
 const LEAVE_TYPES: { id: LeaveType; label: string; color: string; bg: string }[] = [
   { id: "sick",   label: "Sick leave",   color: "#A32D2D", bg: "#FCEBEB" },
@@ -36,13 +36,29 @@ export default function TimesheetPortal() {
   );
 }
 
-// ─── Log Today ────────────────────────────────────────────────────────────────
+function fmtElapsed(ms: number): string {
+  const totalMin = Math.floor(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return `${h}h ${m.toString().padStart(2, "0")}m`;
+}
+
+function fmtClock(utcMs: number, iana: string): string {
+  return new Date(utcMs).toLocaleTimeString("en-US", {
+    timeZone: iana,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+// ─── Log Today (Punch in/out) ─────────────────────────────────────────────────
 function LogToday() {
-  const { employees, holidays, timesheets, leaves, config, submitTimesheet, getTimesheet, getLeave, applyLeave, currentEmployeeId } = useStore((s) => ({
+  const { employees, holidays, timesheets, leaves, config, getTimesheet, getLeave, applyLeave, startWorkday, endWorkday, currentEmployeeId } = useStore((s) => ({
     employees: s.employees, holidays: s.holidays,
     timesheets: s.timesheets, leaves: s.leaves, config: s.config,
-    submitTimesheet: s.submitTimesheet, getTimesheet: s.getTimesheet,
-    getLeave: s.getLeave, applyLeave: s.applyLeave,
+    getTimesheet: s.getTimesheet, getLeave: s.getLeave, applyLeave: s.applyLeave,
+    startWorkday: s.startWorkday, endWorkday: s.endWorkday,
     currentEmployeeId: s.currentEmployeeId,
   }));
 
@@ -52,10 +68,20 @@ function LogToday() {
 
   const status: DayStatus = getDayStatus(emp, todayLocal, holidays, timesheets, todayLocal, leaves);
   const ts = getTimesheet(currentEmployeeId, todayLocal);
+  const inProgress = !!ts && ts.status === "in-progress";
   const submitted = ts?.submitted ?? false;
   const leave = getLeave(currentEmployeeId, todayLocal);
   const holiday = holidays.find((h) => h.date === todayLocal);
 
+  // Live clock — updates once a second while clocked in
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!inProgress) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [inProgress]);
+
+  // Entry form state for clock-out breakdown
   const [rows, setRows] = useState<TimesheetEntry[]>([
     { vertical: config.verticals[0] || "", note: "", hours: 0 },
   ]);
@@ -63,25 +89,27 @@ function LogToday() {
   const [leaveType, setLeaveType] = useState<LeaveType>("sick");
   const [leaveNote, setLeaveNote] = useState("");
 
-  // If already submitted, show those entries
-  const displayRows = submitted ? ts!.entries : rows;
-
   function addRow() { setRows((r) => [...r, { vertical: config.verticals[0] || "", note: "", hours: 0 }]); }
   function removeRow(i: number) { setRows((r) => r.filter((_, idx) => idx !== i)); }
   function updateRow(i: number, patch: Partial<TimesheetEntry>) {
     setRows((r) => r.map((row, idx) => idx === i ? { ...row, ...patch } : row));
   }
 
-  function submit() {
-    if (submitted) return;
+  function onClockIn() {
+    startWorkday(currentEmployeeId, todayLocal, emp.timezone);
+    showToast("Clocked in — have a productive day");
+  }
+
+  function onClockOut() {
+    if (!ts) return;
     for (const row of rows) {
       if (!row.vertical) { showToast("Vertical is required for all entries"); return; }
       if (!row.hours || row.hours <= 0) { showToast("Hours required for all entries"); return; }
     }
     const total = rows.reduce((a, r) => a + (r.hours || 0), 0);
     if (total < emp.minHoursPerDay) { showToast(`Minimum ${emp.minHoursPerDay}h required — entered ${total.toFixed(1)}h`); return; }
-    submitTimesheet({ employeeId: currentEmployeeId, date: todayLocal, entries: rows, totalHours: total, submitted: true, submittedAt: Date.now(), submittedFromTz: emp.timezone });
-    showToast(`Submitted — ${total.toFixed(1)}h logged`);
+    endWorkday(ts.id, rows);
+    showToast(`Clocked out — ${total.toFixed(1)}h logged`);
   }
 
   function submitLeave() {
@@ -91,6 +119,8 @@ function LogToday() {
   }
 
   const dayLabel = new Date(todayLocal + "T00:00:00").toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const elapsedMs = ts?.startedAt ? now - ts.startedAt : 0;
+  const suggestedHours = Math.max(0.5, Math.round(elapsedMs / 3600000 * 2) / 2); // nearest 0.5h
 
   return (
     <PageShell title="Log today" subtitle={`${emp.name} · ${tz.short} · ${dayLabel}`}>
@@ -122,36 +152,60 @@ function LogToday() {
         </div>
       )}
 
-      {/* Main logging area — only when working day and not on leave */}
+      {/* Punch flow — working day, no leave */}
       {status !== "weekoff" && status !== "holiday" && status !== "leave" && (
         <>
-          <InfoBanner>
-            <strong>Vertical</strong> and <strong>hours</strong> are required.
-            Minimum <strong>{emp.minHoursPerDay}h</strong> per day.
-            {!submitted && " Need to take leave instead? Use the button below."}
-          </InfoBanner>
-
-          <Card highlight={!submitted}>
-            {/* Column headers */}
-            {!submitted && (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 80px 32px", gap: 8, marginBottom: 8 }}>
-                {["Vertical *", "What did you work on?", "Hours *", ""].map((h, i) => (
-                  <span key={i} style={{ fontSize: 10, fontWeight: 500, color: "var(--c-text-3)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</span>
-                ))}
+          {/* Not started yet */}
+          {!ts && (
+            <Card highlight>
+              <div style={{ textAlign: "center", padding: "20px 0" }}>
+                <div style={{ fontSize: 13, color: "var(--c-text-2)", marginBottom: 6 }}>Ready to start your day?</div>
+                <div style={{ fontSize: 22, fontWeight: 500, marginBottom: 16 }}>Clock in to begin</div>
+                <Button variant="primary" onClick={onClockIn}>▶ Clock in</Button>
+                <div style={{ marginTop: 16, fontSize: 11, color: "var(--c-text-3)" }}>
+                  Or{" "}
+                  <button onClick={() => setShowLeaveForm(true)} style={{ background: "none", border: "none", color: "var(--c-brand-dark)", cursor: "pointer", fontSize: 11, padding: 0, textDecoration: "underline", fontFamily: "inherit" }}>
+                    apply leave for today
+                  </button>
+                </div>
               </div>
-            )}
+            </Card>
+          )}
 
-            {displayRows.map((row, ri) => (
-              <div key={ri} style={{ display: "grid", gridTemplateColumns: "1fr 2fr 80px 32px", gap: 8, marginBottom: 8, alignItems: "center" }}>
-                {submitted ? (
-                  <>
-                    <Chip label={row.vertical} variant="purple" />
-                    <span style={{ fontSize: 12, color: "var(--c-text-2)" }}>{row.note || "—"}</span>
-                    <span style={{ fontSize: 13, fontWeight: 500 }}>{row.hours.toFixed(1)}h</span>
-                    <span />
-                  </>
-                ) : (
-                  <>
+          {/* In progress — live timer + clock-out form */}
+          {ts && inProgress && (
+            <>
+              <Card highlight>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--c-text-3)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>On the clock</div>
+                    <div style={{ fontSize: 13, color: "var(--c-text-2)" }}>
+                      Clocked in at <strong>{ts.startedAt ? fmtClock(ts.startedAt, emp.timezone) : ""}</strong>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 28, fontWeight: 500, color: "var(--c-brand-dark)", fontVariantNumeric: "tabular-nums" }}>
+                      {fmtElapsed(elapsedMs)}
+                    </div>
+                    <div style={{ fontSize: 10, color: "var(--c-text-3)" }}>elapsed</div>
+                  </div>
+                </div>
+              </Card>
+
+              <InfoBanner>
+                Fill in what you worked on — hours must total at least <strong>{emp.minHoursPerDay}h</strong>.
+                Elapsed time suggests <strong>{suggestedHours.toFixed(1)}h</strong>.
+              </InfoBanner>
+
+              <Card>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 80px 32px", gap: 8, marginBottom: 8 }}>
+                  {["Vertical *", "What did you work on?", "Hours *", ""].map((h, i) => (
+                    <span key={i} style={{ fontSize: 10, fontWeight: 500, color: "var(--c-text-3)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</span>
+                  ))}
+                </div>
+
+                {rows.map((row, ri) => (
+                  <div key={ri} style={{ display: "grid", gridTemplateColumns: "1fr 2fr 80px 32px", gap: 8, marginBottom: 8, alignItems: "center" }}>
                     <select value={row.vertical} onChange={(e) => updateRow(ri, { vertical: e.target.value })}>
                       {config.verticals.map((v) => <option key={v}>{v}</option>)}
                     </select>
@@ -160,38 +214,46 @@ function LogToday() {
                     {rows.length > 1
                       ? <button onClick={() => removeRow(ri)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "var(--c-text-3)", padding: 0, lineHeight: 1 }}>×</button>
                       : <span />}
-                  </>
-                )}
-              </div>
-            ))}
+                  </div>
+                ))}
 
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 12, borderTop: "0.5px solid var(--c-border)", marginTop: 4 }}>
-              {submitted ? (
-                <>
-                  <div style={{ fontSize: 12, color: "var(--c-text-3)" }}>
-                    Submitted {ts?.submittedAt ? fmtIST(ts.submittedAt) : ""}
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 14, fontWeight: 500, color: "var(--c-brand-dark)" }}>
-                      {ts!.totalHours.toFixed(1)}h logged
-                    </span>
-                    <Chip label="✓ Submitted" variant="green" />
-                  </div>
-                </>
-              ) : (
-                <>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 12, borderTop: "0.5px solid var(--c-border)", marginTop: 4 }}>
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <Button size="xs" onClick={addRow}>+ Add row</Button>
                     <span style={{ fontSize: 11, color: "var(--c-text-3)" }}>Min {emp.minHoursPerDay}h required</span>
                   </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <Button size="sm" onClick={() => setShowLeaveForm(true)}>Apply leave</Button>
-                    <Button variant="primary" size="sm" onClick={submit}>Submit day</Button>
-                  </div>
-                </>
-              )}
-            </div>
-          </Card>
+                  <Button variant="primary" size="sm" onClick={onClockOut}>■ Clock out &amp; submit</Button>
+                </div>
+              </Card>
+            </>
+          )}
+
+          {/* Already submitted for today */}
+          {ts && submitted && (
+            <Card>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>Today's timesheet</div>
+                <Chip label="✓ Submitted" variant="green" />
+              </div>
+              {ts.entries.map((en, ri) => (
+                <div key={ri} style={{ display: "grid", gridTemplateColumns: "1fr 2fr 80px", gap: 8, marginBottom: 8, alignItems: "center" }}>
+                  <Chip label={en.vertical} variant="purple" />
+                  <span style={{ fontSize: 12, color: "var(--c-text-2)" }}>{en.note || "—"}</span>
+                  <span style={{ fontSize: 13, fontWeight: 500 }}>{en.hours.toFixed(1)}h</span>
+                </div>
+              ))}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 12, borderTop: "0.5px solid var(--c-border)", marginTop: 4 }}>
+                <div style={{ fontSize: 12, color: "var(--c-text-3)" }}>
+                  {ts.startedAt && ts.endedAt
+                    ? `${fmtClock(ts.startedAt, emp.timezone)} → ${fmtClock(ts.endedAt, emp.timezone)}`
+                    : ts.submittedAt ? `Submitted ${fmtIST(ts.submittedAt)}` : ""}
+                </div>
+                <span style={{ fontSize: 14, fontWeight: 500, color: "var(--c-brand-dark)" }}>
+                  {ts.totalHours.toFixed(1)}h logged
+                </span>
+              </div>
+            </Card>
+          )}
 
           {/* Leave application form */}
           {showLeaveForm && !submitted && (
@@ -226,12 +288,13 @@ function LogToday() {
   );
 }
 
-// ─── My History ───────────────────────────────────────────────────────────────
+// ─── My History (with queries) ────────────────────────────────────────────────
 function MyHistory() {
-  const { employees, holidays, timesheets, leaves, currentEmployeeId } = useStore((s) => ({
+  const { employees, holidays, timesheets, leaves, queries, currentEmployeeId, respondQuery } = useStore((s) => ({
     employees: s.employees, holidays: s.holidays,
-    timesheets: s.timesheets, leaves: s.leaves,
+    timesheets: s.timesheets, leaves: s.leaves, queries: s.queries,
     currentEmployeeId: s.currentEmployeeId,
+    respondQuery: s.respondQuery,
   }));
 
   const emp = employees.find((e) => e.id === currentEmployeeId)!;
@@ -246,20 +309,62 @@ function MyHistory() {
 
   type StatusStyle = { bg: string; color: string };
   const STATUS_STYLES: Record<DayStatus, StatusStyle> = {
-    logged:   { bg: "#E6F1FB", color: "#185FA5" },
-    missing:  { bg: "#FCEBEB", color: "#A32D2D" },
-    weekoff:  { bg: "#F1EFE8", color: "#5F5E5A" },
-    holiday:  { bg: "#FAEEDA", color: "#854F0B" },
-    upcoming: { bg: "#fff",    color: "var(--c-text-2)" },
-    future:   { bg: "#fff",    color: "var(--c-text-3)" },
-    leave:    { bg: "#FCEBEB", color: "#A32D2D" },
+    logged:        { bg: "#E6F1FB", color: "#185FA5" },
+    missing:       { bg: "#FCEBEB", color: "#A32D2D" },
+    weekoff:       { bg: "#F1EFE8", color: "#5F5E5A" },
+    holiday:       { bg: "#FAEEDA", color: "#854F0B" },
+    upcoming:      { bg: "#fff",    color: "var(--c-text-2)" },
+    future:        { bg: "#fff",    color: "var(--c-text-3)" },
+    leave:         { bg: "#FCEBEB", color: "#A32D2D" },
+    "in-progress": { bg: "#EEEDFE", color: "#3C3489" },
   };
 
   const totalHours = empTimesheets.reduce((a, t) => a + t.totalHours, 0);
+  const myQueries = queries.filter((q) => q.employeeId === currentEmployeeId);
+  const openQueries = myQueries.filter((q) => q.status === "open" && !q.response);
+
+  const [replyFor, setReplyFor] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+
+  function submitReply(queryId: string) {
+    if (!replyText.trim()) { showToast("Enter a response"); return; }
+    respondQuery(queryId, replyText.trim());
+    setReplyFor(null);
+    setReplyText("");
+    showToast("Response sent");
+  }
 
   return (
     <PageShell title="My history" subtitle="Monthly overview and submitted timesheets">
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 20 }}>
+
+      {openQueries.length > 0 && (
+        <>
+          <SectionLabel mt={0}>Open questions from admin ({openQueries.length})</SectionLabel>
+          {openQueries.map((q) => {
+            const relatedTs = timesheets.find((t) => t.id === q.timesheetId);
+            return (
+              <Card key={q.id} highlight>
+                <div style={{ fontSize: 11, color: "var(--c-text-3)", marginBottom: 4 }}>
+                  {q.byActorName} · {fmtIST(q.createdAt)}
+                  {relatedTs && ` · re: ${relatedTs.date}`}
+                </div>
+                <div style={{ fontSize: 13, color: "var(--c-text)", marginBottom: 12 }}>"{q.question}"</div>
+                {replyFor === q.id ? (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input type="text" value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder="Your response…" autoFocus style={{ flex: 1 }} />
+                    <Button variant="primary" size="sm" onClick={() => submitReply(q.id)}>Send</Button>
+                    <Button size="sm" onClick={() => { setReplyFor(null); setReplyText(""); }}>Cancel</Button>
+                  </div>
+                ) : (
+                  <Button size="sm" onClick={() => { setReplyFor(q.id); setReplyText(""); }}>Reply</Button>
+                )}
+              </Card>
+            );
+          })}
+        </>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 20, marginTop: openQueries.length > 0 ? 20 : 0 }}>
         <div style={{ background: "var(--c-bg)", borderRadius: "var(--r-md)", padding: "12px 14px" }}>
           <div style={{ fontSize: 20, fontWeight: 500, color: "var(--c-brand-dark)" }}>{totalHours.toFixed(1)}h</div>
           <div style={{ fontSize: 11, color: "var(--c-text-2)", marginTop: 2 }}>Total hours this month</div>
@@ -276,7 +381,6 @@ function MyHistory() {
 
       <SectionLabel mt={0}>{monthLabel}</SectionLabel>
 
-      {/* Legend */}
       <div style={{ display: "flex", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
         {(["logged", "missing", "weekoff", "holiday", "leave"] as DayStatus[]).map((s) => (
           <div key={s} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--c-text-2)" }}>
@@ -314,12 +418,14 @@ function MyHistory() {
           <SectionLabel>Submitted timesheets</SectionLabel>
           {empTimesheets.map((ts) => {
             const dl = new Date(ts.date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
+            const tsQueries = myQueries.filter((q) => q.timesheetId === ts.id);
             return (
               <div key={ts.id} style={{ border: "0.5px solid var(--c-border)", borderRadius: "var(--r-lg)", padding: 14, marginBottom: 8, background: "#fff" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                   <span style={{ fontSize: 13, fontWeight: 500 }}>{dl}</span>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 13, fontWeight: 500, color: "var(--c-brand-dark)" }}>{ts.totalHours.toFixed(1)}h</span>
+                    {tsQueries.length > 0 && <Chip label={`${tsQueries.length} query${tsQueries.length === 1 ? "" : "ies"}`} variant="amber" />}
                     <Chip label="Submitted" variant="green" />
                   </div>
                 </div>
@@ -330,6 +436,23 @@ function MyHistory() {
                     <span style={{ fontSize: 12, fontWeight: 500 }}>{en.hours.toFixed(1)}h</span>
                   </div>
                 ))}
+                {tsQueries.length > 0 && (
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: "0.5px solid var(--c-border)" }}>
+                    {tsQueries.map((q) => (
+                      <div key={q.id} style={{ padding: "8px 0", fontSize: 12 }}>
+                        <div style={{ color: "var(--c-text-3)", marginBottom: 4 }}>
+                          <strong>{q.byActorName}:</strong> {q.question}
+                        </div>
+                        {q.response && (
+                          <div style={{ color: "var(--c-text-2)", marginLeft: 12, paddingLeft: 8, borderLeft: "2px solid var(--c-brand)" }}>
+                            You replied: {q.response}
+                          </div>
+                        )}
+                        {q.status === "resolved" && <Chip label="Resolved" variant="green" tiny />}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {ts.submittedAt && <div style={{ fontSize: 10, color: "var(--c-text-3)", marginTop: 8 }}>Submitted {fmtIST(ts.submittedAt)}</div>}
               </div>
             );
@@ -340,7 +463,7 @@ function MyHistory() {
   );
 }
 
-// ─── My Leaves ────────────────────────────────────────────────────────────────
+// ─── My Leaves (unchanged logic) ──────────────────────────────────────────────
 function MyLeaves() {
   const { employees, leaves, applyLeave, cancelLeave, holidays, timesheets, currentEmployeeId } = useStore((s) => ({
     employees: s.employees, leaves: s.leaves,
@@ -374,7 +497,6 @@ function MyLeaves() {
 
   return (
     <PageShell title="My leaves" subtitle="Apply and manage your leave requests">
-      {/* Summary */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 20 }}>
         <div style={{ background: "#FCEBEB", borderRadius: "var(--r-md)", padding: "12px 14px" }}>
           <div style={{ fontSize: 20, fontWeight: 500, color: "#A32D2D" }}>{sickCount}</div>
@@ -390,7 +512,6 @@ function MyLeaves() {
         </div>
       </div>
 
-      {/* Apply new leave — future dates only */}
       <SectionLabel mt={0}>Apply leave for a future date</SectionLabel>
       <Card>
         <InfoBanner>
@@ -415,7 +536,6 @@ function MyLeaves() {
         <Button variant="primary" onClick={applyNew}>Apply leave</Button>
       </Card>
 
-      {/* Leave history */}
       <SectionLabel>Leave history</SectionLabel>
       {myLeaves.length === 0 && (
         <div style={{ fontSize: 13, color: "var(--c-text-3)", padding: "16px 0" }}>No leaves applied yet</div>

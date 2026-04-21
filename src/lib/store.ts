@@ -5,6 +5,8 @@ import type {
   Employee,
   Holiday,
   Timesheet,
+  TimesheetEntry,
+  TimesheetQuery,
   LeaveRequest,
   LeaveType,
   AuditEntry,
@@ -12,11 +14,10 @@ import type {
   Portal,
   AuditType,
 } from "@/types";
-import { nowInTz, todayInTz, dateKey } from "./utils";
 
 interface AppState {
   // Auth / session
-  currentEmployeeId: string; // "admin" or employee id
+  currentEmployeeId: string;
   currentEmail: string;
   isAuthenticated: boolean;
   portal: Portal;
@@ -51,12 +52,20 @@ interface AppState {
   timesheets: Timesheet[];
   submitTimesheet: (ts: Omit<Timesheet, "id">) => void;
   getTimesheet: (employeeId: string, date: string) => Timesheet | undefined;
+  startWorkday: (employeeId: string, date: string, tz: string) => string;
+  endWorkday: (tsId: string, entries: TimesheetEntry[]) => void;
 
   // Leaves
   leaves: LeaveRequest[];
   applyLeave: (empId: string, date: string, type: LeaveType, note: string) => void;
   cancelLeave: (leaveId: string) => void;
   getLeave: (empId: string, date: string) => LeaveRequest | undefined;
+
+  // Queries
+  queries: TimesheetQuery[];
+  createQuery: (timesheetId: string, employeeId: string, question: string) => void;
+  respondQuery: (queryId: string, response: string) => void;
+  resolveQuery: (queryId: string) => void;
 
   // Audit
   auditLog: AuditEntry[];
@@ -68,6 +77,14 @@ interface AppState {
 
 function uid() {
   return Math.random().toString(36).slice(2, 10);
+}
+
+function sheetsPost(url: string, action: string, data: any) {
+  if (!url) return;
+  fetch(url, {
+    method: "POST",
+    body: JSON.stringify({ action, data }),
+  }).catch(() => {});
 }
 
 const SEED_EMPLOYEES: Employee[] = [
@@ -171,18 +188,21 @@ export const useStore = create<AppState>()(
           config: { ...s.config, roles: [...s.config.roles, role] },
         }));
         get().addAudit("config", get().currentEmployeeId, "System", `Added role: "${role}"`);
+        sheetsPost(get().config.sheetsUrl, "addRole", { role });
       },
       removeRole: (role) => {
         set((s) => ({
           config: { ...s.config, roles: s.config.roles.filter((r) => r !== role) },
         }));
         get().addAudit("config", get().currentEmployeeId, "System", `Removed role: "${role}"`);
+        sheetsPost(get().config.sheetsUrl, "removeRole", { role });
       },
       addVertical: (v) => {
         set((s) => ({
           config: { ...s.config, verticals: [...s.config.verticals, v] },
         }));
         get().addAudit("config", get().currentEmployeeId, "System", `Added vertical: "${v}"`);
+        sheetsPost(get().config.sheetsUrl, "addVertical", { vertical: v });
       },
       removeVertical: (v) => {
         set((s) => ({
@@ -196,6 +216,7 @@ export const useStore = create<AppState>()(
           })),
         }));
         get().addAudit("config", get().currentEmployeeId, "System", `Removed vertical: "${v}" — unassigned from all employees`);
+        sheetsPost(get().config.sheetsUrl, "removeVertical", { vertical: v });
       },
 
       employees: SEED_EMPLOYEES,
@@ -208,6 +229,7 @@ export const useStore = create<AppState>()(
           e.name,
           `Onboarded ${e.name} as ${e.role} — verticals: ${e.verticals.join(", ") || "none"}`
         );
+        sheetsPost(get().config.sheetsUrl, "addEmployee", e);
       },
       updateEmployee: (id, patch, actorId) => {
         const old = get().employees.find((e) => e.id === id);
@@ -225,7 +247,6 @@ export const useStore = create<AppState>()(
           ),
         }));
         if (diff.length) {
-          const actor = get().employees.find((e) => e.id === actorId);
           get().addAudit(
             "profile",
             actorId,
@@ -233,6 +254,7 @@ export const useStore = create<AppState>()(
             `Profile updated for ${old.name}`,
             diff
           );
+          sheetsPost(get().config.sheetsUrl, "updateEmployee", { id, patch });
         }
       },
 
@@ -250,11 +272,15 @@ export const useStore = create<AppState>()(
           ),
         }));
         get().addAudit("config", get().currentEmployeeId, "System", `Added holiday: ${h.name} (${h.date})`);
+        sheetsPost(get().config.sheetsUrl, "addHoliday", nh);
       },
       removeHoliday: (id) => {
         const h = get().holidays.find((x) => x.id === id);
         set((s) => ({ holidays: s.holidays.filter((x) => x.id !== id) }));
-        if (h) get().addAudit("config", get().currentEmployeeId, "System", `Removed holiday: ${h.name}`);
+        if (h) {
+          get().addAudit("config", get().currentEmployeeId, "System", `Removed holiday: ${h.name}`);
+          sheetsPost(get().config.sheetsUrl, "removeHoliday", { id });
+        }
       },
 
       timesheets: [],
@@ -273,19 +299,65 @@ export const useStore = create<AppState>()(
           emp?.name || ts.employeeId,
           `Submitted timesheet for ${ts.date} — ${ts.totalHours.toFixed(1)}h across ${ts.entries.length} entr${ts.entries.length === 1 ? "y" : "ies"}: ${ts.entries.map((e) => `${e.vertical} (${e.hours}h)`).join(", ")}`
         );
-        // Push to Sheets if configured
-        const url = get().config.sheetsUrl;
-        if (url) {
-          fetch(url, {
-            method: "POST",
-            body: JSON.stringify({ action: "submitTimesheet", data: ts }),
-          }).catch(() => {});
-        }
+        sheetsPost(get().config.sheetsUrl, "submitTimesheet", ts);
       },
       getTimesheet: (employeeId, date) =>
         get().timesheets.find(
           (t) => t.employeeId === employeeId && t.date === date
         ),
+      startWorkday: (employeeId, date, tz) => {
+        const existing = get().timesheets.find(
+          (t) => t.employeeId === employeeId && t.date === date
+        );
+        if (existing) return existing.id;
+        const ts: Timesheet = {
+          id: uid(),
+          employeeId,
+          date,
+          entries: [],
+          totalHours: 0,
+          submitted: false,
+          submittedFromTz: tz,
+          startedAt: Date.now(),
+          status: "in-progress",
+        };
+        set((s) => ({ timesheets: [...s.timesheets, ts] }));
+        const emp = get().employees.find((e) => e.id === employeeId);
+        get().addAudit(
+          "timesheet",
+          employeeId,
+          emp?.name || employeeId,
+          `Clocked in for ${date}`
+        );
+        sheetsPost(get().config.sheetsUrl, "submitTimesheet", ts);
+        return ts.id;
+      },
+      endWorkday: (tsId, entries) => {
+        const ts = get().timesheets.find((t) => t.id === tsId);
+        if (!ts) return;
+        const totalHours = entries.reduce((a, r) => a + (r.hours || 0), 0);
+        const endedAt = Date.now();
+        const updated: Timesheet = {
+          ...ts,
+          entries,
+          totalHours,
+          endedAt,
+          submitted: true,
+          submittedAt: endedAt,
+          status: "submitted",
+        };
+        set((s) => ({
+          timesheets: s.timesheets.map((t) => (t.id === tsId ? updated : t)),
+        }));
+        const emp = get().employees.find((e) => e.id === ts.employeeId);
+        get().addAudit(
+          "timesheet",
+          ts.employeeId,
+          emp?.name || ts.employeeId,
+          `Clocked out for ${ts.date} — ${totalHours.toFixed(1)}h across ${entries.length} entr${entries.length === 1 ? "y" : "ies"}: ${entries.map((e) => `${e.vertical} (${e.hours}h)`).join(", ")}`
+        );
+        sheetsPost(get().config.sheetsUrl, "submitTimesheet", updated);
+      },
 
       leaves: [],
       applyLeave: (empId, date, type, note) => {
@@ -293,13 +365,56 @@ export const useStore = create<AppState>()(
         set((s) => ({ leaves: [...s.leaves.filter((l) => !(l.employeeId === empId && l.date === date)), leave] }));
         const emp = get().employees.find((e) => e.id === empId);
         get().addAudit("profile", empId, emp?.name || empId, `Applied ${type} leave for ${date}${note ? `: ${note}` : ""}`);
+        sheetsPost(get().config.sheetsUrl, "applyLeave", leave);
       },
       cancelLeave: (leaveId) => {
         const leave = get().leaves.find((l) => l.id === leaveId);
         set((s) => ({ leaves: s.leaves.filter((l) => l.id !== leaveId) }));
-        if (leave) get().addAudit("profile", leave.employeeId, leave.employeeId, `Cancelled ${leave.type} leave for ${leave.date}`);
+        if (leave) {
+          get().addAudit("profile", leave.employeeId, leave.employeeId, `Cancelled ${leave.type} leave for ${leave.date}`);
+          sheetsPost(get().config.sheetsUrl, "cancelLeave", { id: leaveId });
+        }
       },
       getLeave: (empId, date) => get().leaves.find((l) => l.employeeId === empId && l.date === date),
+
+      queries: [],
+      createQuery: (timesheetId, employeeId, question) => {
+        const actorId = get().currentEmployeeId;
+        const actorName = actorId === "admin" ? "Admin" : (get().employees.find((e) => e.id === actorId)?.name || actorId);
+        const q: TimesheetQuery = {
+          id: uid(),
+          timesheetId,
+          employeeId,
+          byActorId: actorId,
+          byActorName: actorName,
+          question,
+          status: "open",
+          createdAt: Date.now(),
+        };
+        set((s) => ({ queries: [q, ...s.queries] }));
+        const emp = get().employees.find((e) => e.id === employeeId);
+        get().addAudit("query", actorId, emp?.name || employeeId, `Raised query on ${emp?.name || employeeId}'s timesheet: "${question}"`);
+        sheetsPost(get().config.sheetsUrl, "createQuery", q);
+      },
+      respondQuery: (queryId, response) => {
+        const q = get().queries.find((x) => x.id === queryId);
+        if (!q) return;
+        const updated: TimesheetQuery = { ...q, response, respondedAt: Date.now() };
+        set((s) => ({ queries: s.queries.map((x) => (x.id === queryId ? updated : x)) }));
+        const emp = get().employees.find((e) => e.id === q.employeeId);
+        get().addAudit("query", q.employeeId, emp?.name || q.employeeId, `Responded to query: "${response}"`);
+        sheetsPost(get().config.sheetsUrl, "respondQuery", { id: queryId, response, respondedAt: updated.respondedAt });
+      },
+      resolveQuery: (queryId) => {
+        const q = get().queries.find((x) => x.id === queryId);
+        if (!q) return;
+        const updated: TimesheetQuery = { ...q, status: "resolved", resolvedAt: Date.now() };
+        set((s) => ({ queries: s.queries.map((x) => (x.id === queryId ? updated : x)) }));
+        const actorId = get().currentEmployeeId;
+        const emp = get().employees.find((e) => e.id === q.employeeId);
+        get().addAudit("query", actorId, emp?.name || q.employeeId, `Resolved query on ${emp?.name || q.employeeId}'s timesheet`);
+        sheetsPost(get().config.sheetsUrl, "resolveQuery", { id: queryId, resolvedAt: updated.resolvedAt });
+      },
 
       auditLog: [],
       addAudit: (type, actorId, subject, action, diff) => {
@@ -315,13 +430,7 @@ export const useStore = create<AppState>()(
           diff,
         };
         set((s) => ({ auditLog: [entry, ...s.auditLog] }));
-        const url = get().config.sheetsUrl;
-        if (url) {
-          fetch(url, {
-            method: "POST",
-            body: JSON.stringify({ action: "addAudit", data: entry }),
-          }).catch(() => {});
-        }
+        sheetsPost(get().config.sheetsUrl, "addAudit", entry);
       },
 
       loadFromSheets: (data: any) => {
@@ -365,6 +474,26 @@ export const useStore = create<AppState>()(
               appliedAt: Number(r.appliedAt_UTC) || Date.now(),
             }));
           if (leaves.length) set({ leaves });
+        }
+
+        // Parse queries
+        if (data.queries?.length) {
+          const queries: TimesheetQuery[] = data.queries
+            .filter((r: any) => r.id && r.timesheetId)
+            .map((r: any) => ({
+              id: String(r.id),
+              timesheetId: String(r.timesheetId),
+              employeeId: String(r.employeeId),
+              byActorId: String(r.byActorId),
+              byActorName: String(r.byActorName || ""),
+              question: String(r.question || ""),
+              response: r.response ? String(r.response) : undefined,
+              status: (r.status === "resolved" ? "resolved" : "open") as "open" | "resolved",
+              createdAt: Number(r.createdAt_UTC) || Date.now(),
+              respondedAt: r.respondedAt_UTC ? Number(r.respondedAt_UTC) : undefined,
+              resolvedAt: r.resolvedAt_UTC ? Number(r.resolvedAt_UTC) : undefined,
+            }));
+          if (queries.length) set({ queries });
         }
 
         // Parse config

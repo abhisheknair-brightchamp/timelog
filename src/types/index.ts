@@ -30,6 +30,8 @@ export interface TimesheetEntry {
   hours: number;
 }
 
+export type TimesheetStatus = "in-progress" | "submitted";
+
 export interface Timesheet {
   id: string;
   employeeId: string;
@@ -39,9 +41,12 @@ export interface Timesheet {
   submitted: boolean;
   submittedAt?: number; // UTC ms
   submittedFromTz: string; // IANA
+  startedAt?: number; // UTC ms — when they clocked in
+  endedAt?: number; // UTC ms — when they clocked out
+  status?: TimesheetStatus; // "in-progress" while clocked in
 }
 
-export type AuditType = "profile" | "timesheet" | "config" | "onboard";
+export type AuditType = "profile" | "timesheet" | "config" | "onboard" | "query";
 
 export interface AuditEntry {
   id: string;
@@ -67,7 +72,8 @@ export type DayStatus =
   | "holiday"
   | "upcoming"
   | "future"
-  | "leave";
+  | "leave"
+  | "in-progress";
 
 export type LeaveType = "sick" | "annual" | "other";
 
@@ -78,4 +84,18 @@ export interface LeaveRequest {
   type: LeaveType;
   note: string;
   appliedAt: number; // UTC ms
+}
+
+export interface TimesheetQuery {
+  id: string;
+  timesheetId: string;
+  employeeId: string;
+  byActorId: string;
+  byActorName: string;
+  question: string;
+  response?: string;
+  status: "open" | "resolved";
+  createdAt: number; // UTC ms
+  respondedAt?: number; // UTC ms
+  resolvedAt?: number; // UTC ms
 }

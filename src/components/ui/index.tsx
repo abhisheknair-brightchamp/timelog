@@ -99,10 +99,12 @@ import type { DayStatus } from "@/types";
 const dayVariants: Record<DayStatus, ChipVariant> = {
   logged: "green", missing: "red", weekoff: "gray",
   holiday: "amber", upcoming: "blue", future: "gray", leave: "blue",
+  "in-progress": "purple",
 };
 const dayLabels: Record<DayStatus, string> = {
   logged: "Submitted", missing: "Missing", weekoff: "Week off",
   holiday: "Holiday", upcoming: "Today", future: "—", leave: "On leave",
+  "in-progress": "Clocked in",
 };
 export function DayChip({ status }: { status: DayStatus }) {
   return <Chip label={dayLabels[status]} variant={dayVariants[status]} />;
