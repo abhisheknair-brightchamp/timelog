@@ -683,188 +683,178 @@ export const useStore = create<AppState>()(
         sheetsPost(get().config.sheetsUrl, "addAudit", entry);
       },
 
-      loadFromSheets: (data: any) => {
-        // Parse employees from Sheets format
-        if (data.employees?.length) {
-          const employees: Employee[] = data.employees
-            .filter((r: any) => r.id && r.email)
-            .map((r: any) => ({
-              id: String(r.id),
-              name: String(r.name || ""),
-              email: String(r.email || ""),
-              role: String(r.role || ""),
-              verticals: r.verticals ? String(r.verticals).split(",").map((v: string) => v.trim()).filter(Boolean) : [],
-              timezone: String(r.timezone || "Asia/Kolkata"),
-              weekoffs: r.weekoffs ? String(r.weekoffs).split(",").map(Number).filter((n: number) => !isNaN(n)) : [],
-              minHoursPerDay: Number(r.minHoursPerDay) || 8,
-              active: r.active !== "FALSE",
-              createdAt: Number(r.createdAt_UTC) || Date.now(),
-            }));
-          if (employees.length) set({ employees });
-        }
+     loadFromSheets: (data: any) => {
 
-        // Parse holidays
-        if (data.holidays?.length) {
-          const holidays: Holiday[] = data.holidays
-            .filter((r: any) => r.id && r.date)
-            .map((r: any) => ({ id: String(r.id), date: String(r.date), name: String(r.name || "") }));
-          if (holidays.length) set({ holidays });
-        }
-
-        // Parse leaves
-        if (data.leaves?.length) {
-          const leaves: LeaveRequest[] = data.leaves
-            .filter((r: any) => r.id && r.employeeId)
-            .map((r: any) => ({
-              id: String(r.id),
-              employeeId: String(r.employeeId),
-              date: String(r.date),
-              type: (r.type || "other") as LeaveType,
-              note: String(r.note || ""),
-              appliedAt: Number(r.appliedAt_UTC) || Date.now(),
-            }));
-          if (leaves.length) set({ leaves });
-        }
-
-        // Parse queries
-        if (data.queries?.length) {
-          const queries: TimesheetQuery[] = data.queries
-            .filter((r: any) => r.id && r.timesheetId)
-            .map((r: any) => ({
-              id: String(r.id),
-              timesheetId: String(r.timesheetId),
-              employeeId: String(r.employeeId),
-              byActorId: String(r.byActorId),
-              byActorName: String(r.byActorName || ""),
-              question: String(r.question || ""),
-              response: r.response ? String(r.response) : undefined,
-              status: (r.status === "resolved" ? "resolved" : "open") as "open" | "resolved",
-              createdAt: Number(r.createdAt_UTC) || Date.now(),
-              respondedAt: r.respondedAt_UTC ? Number(r.respondedAt_UTC) : undefined,
-              resolvedAt: r.resolvedAt_UTC ? Number(r.resolvedAt_UTC) : undefined,
-            }));
-          if (queries.length) set({ queries });
-        }
-
-        // Parse config
-        if (data.config?.length) {
-          const configMap: Record<string, string> = {};
-          data.config.forEach((r: any) => { if (r.key) configMap[r.key] = String(r.value || ""); });
-          const updates: Partial<OrgConfig> = {};
-          if (configMap.roles) updates.roles = configMap.roles.split(",").map((s: string) => s.trim()).filter(Boolean);
-          if (configMap.verticals) updates.verticals = configMap.verticals.split(",").map((s: string) => s.trim()).filter(Boolean);
-          if (Object.keys(updates).length) set((s) => ({ config: { ...s.config, ...updates } }));
-        }
-        if (data.timesheets?.length) {
-
-  const rawTimesheets = data.timesheets;
-
-  const entryMap: Record<string, TimesheetEntry[]> = {};
-
-  if (data.timesheetEntries?.length) {
-
-    data.timesheetEntries.forEach((r: any) => {
-
-      const tsId = String(r.timesheetId);
-
-      if (!entryMap[tsId]) entryMap[tsId] = [];
-
-      entryMap[tsId].push({
-
-        vertical: String(r.vertical || ""),
-
-        hours: Number(r.hours) || 0,
-
-      });
-
-    });
-
+  // Employees
+  if (data.employees?.length) {
+    const employees: Employee[] = data.employees
+      .filter((r: any) => r.id && r.email)
+      .map((r: any) => ({
+        id: String(r.id),
+        name: String(r.name || ""),
+        email: String(r.email || ""),
+        role: String(r.role || ""),
+        verticals: r.verticals
+          ? String(r.verticals).split(",").map((v: string) => v.trim()).filter(Boolean)
+          : [],
+        timezone: String(r.timezone || "Asia/Kolkata"),
+        weekoffs: r.weekoffs
+          ? String(r.weekoffs).split(",").map(Number).filter((n: number) => !isNaN(n))
+          : [],
+        minHoursPerDay: Number(r.minHoursPerDay) || 8,
+        active: r.active !== "FALSE",
+        createdAt: Number(r.createdAt_UTC) || Date.now(),
+      }));
+    if (employees.length) set({ employees });
   }
 
-  const timesheets: Timesheet[] = rawTimesheets
+  // Holidays
+  if (data.holidays?.length) {
+    const holidays: Holiday[] = data.holidays
+      .filter((r: any) => r.id && r.date)
+      .map((r: any) => ({
+        id: String(r.id),
+        date: String(r.date),
+        name: String(r.name || ""),
+      }));
+    if (holidays.length) set({ holidays });
+  }
 
-    .filter((r: any) => r.id && r.employeeId)
+  // Leaves
+  if (data.leaves?.length) {
+    const leaves: LeaveRequest[] = data.leaves
+      .filter((r: any) => r.id && r.employeeId)
+      .map((r: any) => ({
+        id: String(r.id),
+        employeeId: String(r.employeeId),
+        date: String(r.date),
+        type: (r.type || "other") as LeaveType,
+        note: String(r.note || ""),
+        appliedAt: Number(r.appliedAt_UTC) || Date.now(),
+      }));
+    if (leaves.length) set({ leaves });
+  }
 
-    .map((r: any) => ({
+  // Queries
+  if (data.queries?.length) {
+    const queries: TimesheetQuery[] = data.queries
+      .filter((r: any) => r.id && r.timesheetId)
+      .map((r: any) => ({
+        id: String(r.id),
+        timesheetId: String(r.timesheetId),
+        employeeId: String(r.employeeId),
+        byActorId: String(r.byActorId),
+        byActorName: String(r.byActorName || ""),
+        question: String(r.question || ""),
+        response: r.response ? String(r.response) : undefined,
+        status: (r.status === "resolved" ? "resolved" : "open"),
+        createdAt: Number(r.createdAt_UTC) || Date.now(),
+        respondedAt: r.respondedAt_UTC ? Number(r.respondedAt_UTC) : undefined,
+        resolvedAt: r.resolvedAt_UTC ? Number(r.resolvedAt_UTC) : undefined,
+      }));
+    if (queries.length) set({ queries });
+  }
 
-      id: String(r.id),
+  // Config
+  if (data.config?.length) {
+    const configMap: Record<string, string> = {};
+    data.config.forEach((r: any) => {
+      if (r.key) configMap[r.key] = String(r.value || "");
+    });
 
-      employeeId: String(r.employeeId),
+    const updates: Partial<OrgConfig> = {};
+    if (configMap.roles)
+      updates.roles = configMap.roles.split(",").map((s: string) => s.trim()).filter(Boolean);
+    if (configMap.verticals)
+      updates.verticals = configMap.verticals.split(",").map((s: string) => s.trim()).filter(Boolean);
 
-      date: String(r.date),
+    if (Object.keys(updates).length) {
+      set((s) => ({ config: { ...s.config, ...updates } }));
+    }
+  }
 
-      entries: entryMap[r.id] || [],
+  // Timesheets
+  if (data.timesheets?.length) {
+    const entryMap: Record<string, TimesheetEntry[]> = {};
 
-      totalHours: Number(r.totalHours) || 0,
+    if (data.timesheetEntries?.length) {
+      data.timesheetEntries.forEach((r: any) => {
+        const tsId = String(r.timesheetId);
+        if (!entryMap[tsId]) entryMap[tsId] = [];
 
-      capturedHours: Number(r.capturedHours) || 0,
+        entryMap[tsId].push({
+          vertical: String(r.vertical || ""),
+          hours: Number(r.hours) || 0,
+        });
+      });
+    }
 
-      submitted: r.submitted === "TRUE" || r.submitted === true,
+    const timesheets: Timesheet[] = data.timesheets
+      .filter((r: any) => r.id && r.employeeId)
+      .map((r: any) => ({
+        id: String(r.id),
+        employeeId: String(r.employeeId),
+        date: String(r.date),
+        entries: entryMap[r.id] || [],
+        totalHours: Number(r.totalHours) || 0,
+        capturedHours: Number(r.capturedHours) || 0,
+        submitted: r.submitted === "TRUE" || r.submitted === true,
+        submittedAt: r.submittedAt_UTC ? Number(r.submittedAt_UTC) : undefined,
+        submittedFromTz: String(r.submittedFromTz || "Asia/Kolkata"),
+        startedAt: r.startedAt_UTC ? Number(r.startedAt_UTC) : undefined,
+        endedAt: r.endedAt_UTC ? Number(r.endedAt_UTC) : undefined,
+        status: (r.status || "submitted") as any,
+        rejectedAt: r.rejectedAt_UTC ? Number(r.rejectedAt_UTC) : undefined,
+        rejectedBy: r.rejectedBy ? String(r.rejectedBy) : undefined,
+        rejectedByName: r.rejectedByName ? String(r.rejectedByName) : undefined,
+        rejectionReason: r.rejectionReason ? String(r.rejectionReason) : undefined,
+      }));
 
-      submittedAt: r.submittedAt_UTC ? Number(r.submittedAt_UTC) : undefined,
+    if (timesheets.length) set({ timesheets });
+  }
 
-      submittedFromTz: String(r.submittedFromTz || "Asia/Kolkata"),
+  // Notifications
+  if (data.notifications?.length) {
+    const notifications: EmployeeNotification[] = data.notifications
+      .filter((r: any) => r.id && r.employeeId)
+      .map((r: any) => ({
+        id: String(r.id),
+        employeeId: String(r.employeeId),
+        type: r.type,
+        message: String(r.message || ""),
+        createdAt: Number(r.createdAt_UTC) || Date.now(),
+        read: r.read === "TRUE" || r.read === true,
+        timesheetDate: r.timesheetDate ? String(r.timesheetDate) : undefined,
+      }));
 
-      startedAt: r.startedAt_UTC ? Number(r.startedAt_UTC) : undefined,
+    if (notifications.length) set({ notifications });
+  }
 
-      endedAt: r.endedAt_UTC ? Number(r.endedAt_UTC) : undefined,
+  // Audit Log
+  if (data.auditLog?.length) {
+    const auditLog: AuditEntry[] = data.auditLog
+      .filter((r: any) => r.id)
+      .map((r: any) => ({
+        id: String(r.id),
+        timestamp: Number(r.timestamp_UTC) || Date.now(),
+        type: r.type,
+        actorId: String(r.actorId || ""),
+        actorName: String(r.actorName || ""),
+        subject: String(r.subject || ""),
+        action: String(r.action || ""),
+      }));
 
-      status: (r.status || "submitted") as any,
+    if (auditLog.length) set({ auditLog });
+  }
 
-      rejectedAt: r.rejectedAt_UTC ? Number(r.rejectedAt_UTC) : undefined,
-
-      rejectedBy: r.rejectedBy ? String(r.rejectedBy) : undefined,
-
-      rejectedByName: r.rejectedByName ? String(r.rejectedByName) : undefined,
-
-      rejectionReason: r.rejectionReason ? String(r.rejectionReason) : undefined,
-
-    }));
-
-  if (timesheets.length) set({ timesheets });
-
-}
-      },
-    }),
-    { name: "timelog-v1",
-
+},
+}),
+{
+  name: "timelog-v1",
   partialize: (state) => ({
-
     currentEmployeeId: state.currentEmployeeId,
-
     currentEmail: state.currentEmail,
-
     isAuthenticated: state.isAuthenticated,
-
     portal: state.portal,
-
-  }),}
-    if (data.notifications?.length) {
-
-  const notifications: EmployeeNotification[] = data.notifications
-
-    .filter((r: any) => r.id && r.employeeId)
-
-    .map((r: any) => ({
-
-      id: String(r.id),
-
-      employeeId: String(r.employeeId),
-
-      type: r.type,
-
-      message: String(r.message || ""),
-
-      createdAt: Number(r.createdAt_UTC) || Date.now(),
-
-      read: r.read === "TRUE" || r.read === true,
-
-      timesheetDate: r.timesheetDate ? String(r.timesheetDate) : undefined,
-
-    }));
-
-  set({ notifications });
-
+  }),
 }
-  )
-);
