@@ -8,9 +8,9 @@ import type { Employee, Timesheet, TimesheetEntry } from "@/types";
 
 export default function Dashboard() {
   const {
-    employees, holidays, timesheets, leaves, queries, config,
-    createQuery, resolveQuery, rejectTimesheet, reverseRejection,
-    resetShift, resetCheckin, resetCheckout, adminAddTimeLog,
+    employees, holidays, timesheets, leaves, queries, config, notifications,
+    createQuery, addQueryMessage, resolveQuery, rejectTimesheet, reverseRejection,
+    resetShift, resetCheckin, resetCheckout, adminAddTimeLog, markNotificationsRead,
   } = useStore((s) => ({
     employees: s.employees,
     holidays: s.holidays,
@@ -18,7 +18,9 @@ export default function Dashboard() {
     leaves: s.leaves,
     queries: s.queries,
     config: s.config,
+    notifications: s.notifications,
     createQuery: s.createQuery,
+    addQueryMessage: s.addQueryMessage,
     resolveQuery: s.resolveQuery,
     rejectTimesheet: s.rejectTimesheet,
     reverseRejection: s.reverseRejection,
@@ -26,6 +28,7 @@ export default function Dashboard() {
     resetCheckin: s.resetCheckin,
     resetCheckout: s.resetCheckout,
     adminAddTimeLog: s.adminAddTimeLog,
+    markNotificationsRead: s.markNotificationsRead,
   }));
 
   const todayIST = todayInTz("Asia/Kolkata");
@@ -59,6 +62,11 @@ export default function Dashboard() {
   const [addLogRows, setAddLogRows] = useState<TimesheetEntry[]>([
     { vertical: "", note: "", hours: 0 },
   ]);
+
+  const [replyFor, setReplyFor] = useState<string | null>(null); // queryId
+  const [replyText, setReplyText] = useState("");
+
+  const adminUnread = notifications.filter((n) => n.employeeId === "admin" && !n.read);
 
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -118,33 +126,86 @@ export default function Dashboard() {
         <StatCard label="Week off / hol."  value={off}       color="#854F0B" />
       </div>
 
+      {adminUnread.length > 0 && (
+        <div style={{ background: "#EEEDFE", border: "0.5px solid var(--c-brand-border)", borderRadius: "var(--r-md)", padding: "10px 14px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 12, color: "var(--c-brand-dark)", fontWeight: 600 }}>
+            {adminUnread.length} new notification{adminUnread.length === 1 ? "" : "s"} — employee {adminUnread.length === 1 ? "reply" : "replies"} on queries
+          </span>
+          <Button size="xs" onClick={() => markNotificationsRead("admin")}>Dismiss</Button>
+        </div>
+      )}
+
       {openQueries.length > 0 && (
         <>
           <SectionLabel mt={0}>Open queries ({openQueries.length})</SectionLabel>
-          <Card>
-            {openQueries.map((q) => {
-              const emp = employees.find((e) => e.id === q.employeeId);
-              const ts = timesheets.find((t) => t.id === q.timesheetId);
-              return (
-                <div key={q.id} style={{ padding: "10px 0", borderBottom: "0.5px solid var(--c-border)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                    <strong style={{ fontSize: 13 }}>{emp?.name || q.employeeId}</strong>
-                    <span style={{ fontSize: 11, color: "var(--c-text-3)" }}>re: {ts?.date || "—"} · {fmtIST(q.createdAt)}</span>
-                    {q.response && <Chip label="Replied" variant="blue" tiny />}
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--c-text-2)", marginBottom: 6 }}><strong>Q:</strong> {q.question}</div>
-                  {q.response && (
-                    <div style={{ fontSize: 12, color: "var(--c-text-2)", marginLeft: 12, paddingLeft: 8, borderLeft: "2px solid var(--c-brand)", marginBottom: 6 }}>
-                      <strong>A:</strong> {q.response}
-                    </div>
-                  )}
-                  {q.response
-                    ? <Button size="xs" onClick={() => { resolveQuery(q.id); showToast("Query resolved"); }}>Mark resolved</Button>
-                    : <span style={{ fontSize: 11, color: "var(--c-text-3)" }}>Awaiting employee reply</span>}
+          {openQueries.map((q) => {
+            const emp = employees.find((e) => e.id === q.employeeId);
+            const ts = timesheets.find((t) => t.id === q.timesheetId);
+            const messages = q.messages?.length
+              ? q.messages
+              : [{ id: q.id, role: "admin" as const, actorName: q.byActorName, text: q.question, createdAt: q.createdAt }];
+            const lastIsEmployee = messages[messages.length - 1]?.role === "employee";
+            const isReplying = replyFor === q.id;
+            return (
+              <Card key={q.id}>
+                {/* Header */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                  <strong style={{ fontSize: 13 }}>{emp?.name || q.employeeId}</strong>
+                  <span style={{ fontSize: 11, color: "var(--c-text-3)" }}>re: {ts?.date || "—"} · {fmtIST(q.createdAt)}</span>
+                  {lastIsEmployee && <Chip label="Replied" variant="blue" tiny />}
                 </div>
-              );
-            })}
-          </Card>
+
+                {/* Message thread */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+                  {messages.map((msg) => {
+                    const isAdmin = msg.role === "admin";
+                    return (
+                      <div key={msg.id} style={{
+                        alignSelf: isAdmin ? "flex-end" : "flex-start",
+                        maxWidth: "85%",
+                        background: isAdmin ? "var(--c-brand-light)" : "var(--c-bg)",
+                        border: `0.5px solid ${isAdmin ? "var(--c-brand-border)" : "var(--c-border)"}`,
+                        borderRadius: "var(--r-md)",
+                        padding: "8px 12px",
+                      }}>
+                        <div style={{ fontSize: 10, color: "var(--c-text-3)", marginBottom: 3 }}>
+                          {msg.actorName} · {new Date(msg.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true })}
+                        </div>
+                        <div style={{ fontSize: 12, color: "var(--c-text)" }}>{msg.text}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Reply / resolve */}
+                {isReplying ? (
+                  <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                    <textarea
+                      value={replyText}
+                      onChange={(e) => setReplyText(e.target.value)}
+                      placeholder="Type your reply…"
+                      autoFocus
+                      style={{ flex: 1, minHeight: 64, padding: 8, fontSize: 12, border: "0.5px solid var(--c-border-strong)", borderRadius: "var(--r-sm)", fontFamily: "inherit", resize: "vertical" }}
+                    />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      <Button variant="primary" size="sm" onClick={() => {
+                        if (!replyText.trim()) return;
+                        addQueryMessage(q.id, "admin", replyText.trim());
+                        setReplyFor(null); setReplyText("");
+                        showToast("Reply sent");
+                      }}>Send</Button>
+                      <Button size="sm" onClick={() => { setReplyFor(null); setReplyText(""); }}>Cancel</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Button size="xs" onClick={() => { setReplyFor(q.id); setReplyText(""); }}>↩ Reply</Button>
+                    <Button size="xs" variant="primary" onClick={() => { resolveQuery(q.id); showToast("Query resolved"); }}>✓ Resolve</Button>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
         </>
       )}
 

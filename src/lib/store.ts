@@ -7,6 +7,7 @@ import type {
   Timesheet,
   TimesheetEntry,
   TimesheetQuery,
+  QueryMessage,
   LeaveRequest,
   LeaveType,
   AuditEntry,
@@ -74,7 +75,8 @@ interface AppState {
   // Queries
   queries: TimesheetQuery[];
   createQuery: (timesheetId: string, employeeId: string, question: string) => void;
-  respondQuery: (queryId: string, response: string) => void;
+  addQueryMessage: (queryId: string, role: "admin" | "employee", text: string) => void;
+  respondQuery: (queryId: string, response: string) => void; // legacy wrapper
   resolveQuery: (queryId: string) => void;
 
   // Notifications
@@ -578,6 +580,7 @@ export const useStore = create<AppState>()(
       createQuery: (timesheetId, employeeId, question) => {
         const actorId = get().currentEmployeeId;
         const actorName = actorId === "admin" ? "Admin" : (get().employees.find((e) => e.id === actorId)?.name || actorId);
+        const firstMsg: QueryMessage = { id: uid(), role: "admin", actorName, text: question, createdAt: Date.now() };
         const q: TimesheetQuery = {
           id: uid(),
           timesheetId,
@@ -585,6 +588,7 @@ export const useStore = create<AppState>()(
           byActorId: actorId,
           byActorName: actorName,
           question,
+          messages: [firstMsg],
           status: "open",
           createdAt: Date.now(),
         };
@@ -599,14 +603,41 @@ export const useStore = create<AppState>()(
         );
         sheetsPost(get().config.sheetsUrl, "createQuery", q);
       },
-      respondQuery: (queryId, response) => {
+      addQueryMessage: (queryId, role, text) => {
         const q = get().queries.find((x) => x.id === queryId);
         if (!q) return;
-        const updated: TimesheetQuery = { ...q, response, respondedAt: Date.now() };
+        const actorId = get().currentEmployeeId;
+        const actorName = actorId === "admin" ? "Admin" : (get().employees.find((e) => e.id === actorId)?.name || actorId);
+        const msg: QueryMessage = { id: uid(), role, actorName, text, createdAt: Date.now() };
+        const updated: TimesheetQuery = {
+          ...q,
+          messages: [...(q.messages || [{ id: uid(), role: "admin", actorName: q.byActorName, text: q.question, createdAt: q.createdAt }]), msg],
+          response: role === "employee" ? text : q.response,
+          respondedAt: role === "employee" ? Date.now() : q.respondedAt,
+        };
         set((s) => ({ queries: s.queries.map((x) => (x.id === queryId ? updated : x)) }));
         const emp = get().employees.find((e) => e.id === q.employeeId);
-        get().addAudit("query", q.employeeId, emp?.name || q.employeeId, `Responded to query: "${response}"`);
-        sheetsPost(get().config.sheetsUrl, "respondQuery", { id: queryId, response, respondedAt: updated.respondedAt });
+        get().addAudit("query", actorId, emp?.name || q.employeeId, `${role === "admin" ? "Admin replied" : "Employee replied"} on query: "${text}"`);
+        if (role === "employee") {
+          // notify admin
+          get().addNotification(
+            "admin", "query",
+            `${emp?.name || "Employee"} replied to your query${q.question ? ` "${q.question.slice(0, 40)}${q.question.length > 40 ? "…" : ""}"` : ""}`,
+            undefined
+          );
+        } else {
+          // notify employee
+          get().addNotification(
+            q.employeeId, "query",
+            `Admin replied to the query on your timesheet: "${text}"`,
+            undefined
+          );
+        }
+        sheetsPost(get().config.sheetsUrl, "addQueryMessage", { id: queryId, msg });
+      },
+      respondQuery: (queryId, response) => {
+        // legacy wrapper — adds as employee message
+        get().addQueryMessage(queryId, "employee", response);
       },
       resolveQuery: (queryId) => {
         const q = get().queries.find((x) => x.id === queryId);

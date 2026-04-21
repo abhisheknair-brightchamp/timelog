@@ -91,14 +91,23 @@ export interface LeaveRequest {
   appliedAt: number; // UTC ms
 }
 
+export interface QueryMessage {
+  id: string;
+  role: "admin" | "employee";
+  actorName: string;
+  text: string;
+  createdAt: number; // UTC ms
+}
+
 export interface TimesheetQuery {
   id: string;
   timesheetId: string;
   employeeId: string;
   byActorId: string;
   byActorName: string;
-  question: string;
-  response?: string;
+  question: string; // kept for audit/display
+  response?: string; // kept for backward compat
+  messages: QueryMessage[]; // full conversation thread
   status: "open" | "resolved";
   createdAt: number; // UTC ms
   respondedAt?: number; // UTC ms

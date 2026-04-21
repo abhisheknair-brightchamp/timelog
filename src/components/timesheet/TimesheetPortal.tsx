@@ -330,12 +330,12 @@ function ShiftCard({ ts, tz }: { ts: Timesheet; tz: string }) {
 
 // ─── My History — shifts grouped by date + admin queries ──────────────────────
 function MyHistory() {
-  const { employees, holidays, timesheets, leaves, queries, notifications, currentEmployeeId, respondQuery, markNotificationsRead } = useStore((s) => ({
+  const { employees, holidays, timesheets, leaves, queries, notifications, currentEmployeeId, addQueryMessage, markNotificationsRead } = useStore((s) => ({
     employees: s.employees, holidays: s.holidays,
     timesheets: s.timesheets, leaves: s.leaves, queries: s.queries,
     notifications: s.notifications,
     currentEmployeeId: s.currentEmployeeId,
-    respondQuery: s.respondQuery,
+    addQueryMessage: s.addQueryMessage,
     markNotificationsRead: s.markNotificationsRead,
   }));
 
@@ -385,10 +385,10 @@ function MyHistory() {
 
   function submitReply(queryId: string) {
     if (!replyText.trim()) { showToast("Enter a response"); return; }
-    respondQuery(queryId, replyText.trim());
+    addQueryMessage(queryId, "employee", replyText.trim());
     setReplyFor(null);
     setReplyText("");
-    showToast("Response sent");
+    showToast("Reply sent");
   }
 
   const notifColors: Record<string, { bg: string; color: string; label: string }> = {
@@ -453,24 +453,58 @@ function MyHistory() {
 
       {openQueries.length > 0 && (
         <>
-          <SectionLabel mt={0}>Open questions from admin ({openQueries.length})</SectionLabel>
+          <SectionLabel mt={0}>Open queries from admin ({openQueries.length})</SectionLabel>
           {openQueries.map((q) => {
             const relatedTs = timesheets.find((t) => t.id === q.timesheetId);
+            const messages = q.messages?.length
+              ? q.messages
+              : [{ id: q.id, role: "admin" as const, actorName: q.byActorName, text: q.question, createdAt: q.createdAt }];
+            const isReplying = replyFor === q.id;
             return (
               <Card key={q.id} highlight>
-                <div style={{ fontSize: 11, color: "var(--c-text-3)", marginBottom: 4 }}>
+                <div style={{ fontSize: 11, color: "var(--c-text-3)", marginBottom: 10 }}>
                   {q.byActorName} · {fmtIST(q.createdAt)}
                   {relatedTs && ` · re: ${relatedTs.date}`}
                 </div>
-                <div style={{ fontSize: 13, color: "var(--c-text)", marginBottom: 12 }}>"{q.question}"</div>
-                {replyFor === q.id ? (
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <input type="text" value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder="Your response…" autoFocus style={{ flex: 1 }} />
-                    <Button variant="primary" size="sm" onClick={() => submitReply(q.id)}>Send</Button>
-                    <Button size="sm" onClick={() => { setReplyFor(null); setReplyText(""); }}>Cancel</Button>
+
+                {/* Thread */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+                  {messages.map((msg) => {
+                    const isAdmin = msg.role === "admin";
+                    return (
+                      <div key={msg.id} style={{
+                        alignSelf: isAdmin ? "flex-start" : "flex-end",
+                        maxWidth: "85%",
+                        background: isAdmin ? "var(--c-bg)" : "var(--c-brand-light)",
+                        border: `0.5px solid ${isAdmin ? "var(--c-border)" : "var(--c-brand-border)"}`,
+                        borderRadius: "var(--r-md)",
+                        padding: "8px 12px",
+                      }}>
+                        <div style={{ fontSize: 10, color: "var(--c-text-3)", marginBottom: 3 }}>
+                          {msg.actorName} · {new Date(msg.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true })}
+                        </div>
+                        <div style={{ fontSize: 12, color: "var(--c-text)" }}>{msg.text}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {isReplying ? (
+                  <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                    <textarea
+                      value={replyText}
+                      onChange={(e) => setReplyText(e.target.value)}
+                      placeholder="Your reply…"
+                      autoFocus
+                      style={{ flex: 1, minHeight: 60, padding: 8, fontSize: 12, border: "0.5px solid var(--c-border-strong)", borderRadius: "var(--r-sm)", fontFamily: "inherit", resize: "vertical" }}
+                    />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      <Button variant="primary" size="sm" onClick={() => submitReply(q.id)}>Send</Button>
+                      <Button size="sm" onClick={() => { setReplyFor(null); setReplyText(""); }}>Cancel</Button>
+                    </div>
                   </div>
                 ) : (
-                  <Button size="sm" onClick={() => { setReplyFor(q.id); setReplyText(""); }}>Reply</Button>
+                  <Button size="sm" onClick={() => { setReplyFor(q.id); setReplyText(""); }}>↩ Reply</Button>
                 )}
               </Card>
             );
@@ -551,20 +585,37 @@ function MyHistory() {
                 </div>
                 {shifts.map((s) => <ShiftCard key={s.id} ts={s} tz={emp.timezone} />)}
                 {dateQueries.length > 0 && (
-                  <div style={{ marginTop: 6, background: "var(--c-bg)", borderRadius: "var(--r-md)", padding: 10 }}>
-                    {dateQueries.map((q) => (
-                      <div key={q.id} style={{ padding: "6px 0", fontSize: 12 }}>
-                        <div style={{ color: "var(--c-text-3)", marginBottom: 4 }}>
-                          <strong>{q.byActorName}:</strong> {q.question}
-                        </div>
-                        {q.response && (
-                          <div style={{ color: "var(--c-text-2)", marginLeft: 12, paddingLeft: 8, borderLeft: "2px solid var(--c-brand)" }}>
-                            You replied: {q.response}
+                  <div style={{ marginTop: 6 }}>
+                    {dateQueries.map((q) => {
+                      const messages = q.messages?.length
+                        ? q.messages
+                        : [{ id: q.id, role: "admin" as const, actorName: q.byActorName, text: q.question, createdAt: q.createdAt }];
+                      return (
+                        <div key={q.id} style={{ background: "var(--c-bg)", borderRadius: "var(--r-md)", padding: 10, marginBottom: 6 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                            <span style={{ fontSize: 10, color: "var(--c-text-3)", fontWeight: 600, textTransform: "uppercase" }}>Query</span>
+                            {q.status === "resolved" && <Chip label="Resolved" variant="green" tiny />}
                           </div>
-                        )}
-                        {q.status === "resolved" && <Chip label="Resolved" variant="green" tiny />}
-                      </div>
-                    ))}
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            {messages.map((msg) => {
+                              const isAdmin = msg.role === "admin";
+                              return (
+                                <div key={msg.id} style={{
+                                  alignSelf: isAdmin ? "flex-start" : "flex-end",
+                                  maxWidth: "90%",
+                                  background: isAdmin ? "#fff" : "var(--c-brand-light)",
+                                  border: `0.5px solid ${isAdmin ? "var(--c-border)" : "var(--c-brand-border)"}`,
+                                  borderRadius: "var(--r-sm)", padding: "6px 10px",
+                                }}>
+                                  <div style={{ fontSize: 9, color: "var(--c-text-3)", marginBottom: 2 }}>{msg.actorName}</div>
+                                  <div style={{ fontSize: 11, color: "var(--c-text)" }}>{msg.text}</div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
