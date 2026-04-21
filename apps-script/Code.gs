@@ -634,7 +634,14 @@ function sheetToObjects(sheetName) {
   if (!headers || headers.length === 0) return [];
   return rows.map(row => {
     const obj = {};
-    headers.forEach((h, i) => { if (h) obj[h] = row[i] !== undefined ? row[i] : ""; });
+    headers.forEach((h, i) => {
+      if (!h) return;
+      let val = row[i];
+      if (val instanceof Date) {
+        val = Utilities.formatDate(val, "UTC", "yyyy-MM-dd");
+      }
+      obj[h] = val !== undefined ? val : "";
+    });
     return obj;
   });
 }
