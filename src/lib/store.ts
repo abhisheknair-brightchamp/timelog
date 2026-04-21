@@ -755,6 +755,75 @@ export const useStore = create<AppState>()(
           if (configMap.verticals) updates.verticals = configMap.verticals.split(",").map((s: string) => s.trim()).filter(Boolean);
           if (Object.keys(updates).length) set((s) => ({ config: { ...s.config, ...updates } }));
         }
+        if (data.timesheets?.length) {
+
+  const rawTimesheets = data.timesheets;
+
+  const entryMap: Record<string, TimesheetEntry[]> = {};
+
+  if (data.timesheetEntries?.length) {
+
+    data.timesheetEntries.forEach((r: any) => {
+
+      const tsId = String(r.timesheetId);
+
+      if (!entryMap[tsId]) entryMap[tsId] = [];
+
+      entryMap[tsId].push({
+
+        vertical: String(r.vertical || ""),
+
+        hours: Number(r.hours) || 0,
+
+      });
+
+    });
+
+  }
+
+  const timesheets: Timesheet[] = rawTimesheets
+
+    .filter((r: any) => r.id && r.employeeId)
+
+    .map((r: any) => ({
+
+      id: String(r.id),
+
+      employeeId: String(r.employeeId),
+
+      date: String(r.date),
+
+      entries: entryMap[r.id] || [],
+
+      totalHours: Number(r.totalHours) || 0,
+
+      capturedHours: Number(r.capturedHours) || 0,
+
+      submitted: r.submitted === "TRUE" || r.submitted === true,
+
+      submittedAt: r.submittedAt_UTC ? Number(r.submittedAt_UTC) : undefined,
+
+      submittedFromTz: String(r.submittedFromTz || "Asia/Kolkata"),
+
+      startedAt: r.startedAt_UTC ? Number(r.startedAt_UTC) : undefined,
+
+      endedAt: r.endedAt_UTC ? Number(r.endedAt_UTC) : undefined,
+
+      status: (r.status || "submitted") as any,
+
+      rejectedAt: r.rejectedAt_UTC ? Number(r.rejectedAt_UTC) : undefined,
+
+      rejectedBy: r.rejectedBy ? String(r.rejectedBy) : undefined,
+
+      rejectedByName: r.rejectedByName ? String(r.rejectedByName) : undefined,
+
+      rejectionReason: r.rejectionReason ? String(r.rejectionReason) : undefined,
+
+    }));
+
+  if (timesheets.length) set({ timesheets });
+
+}
       },
     }),
     { name: "timelog-v1" }
