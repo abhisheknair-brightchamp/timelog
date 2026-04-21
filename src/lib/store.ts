@@ -826,6 +826,18 @@ export const useStore = create<AppState>()(
 }
       },
     }),
-    { name: "timelog-v1" }
+    { name: "timelog-v1",
+
+  partialize: (state) => ({
+
+    currentEmployeeId: state.currentEmployeeId,
+
+    currentEmail: state.currentEmail,
+
+    isAuthenticated: state.isAuthenticated,
+
+    portal: state.portal,
+
+  }),}
   )
 );
