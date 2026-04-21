@@ -297,6 +297,9 @@ function handleResetPassword(data) {
 // ─── EXISTING HANDLERS (unchanged) ────────────────────────────────────────────
 
 function handleSubmitTimesheet(ts) {
+  const lock = LockService.getDocumentLock();
+  lock.waitLock(10000);
+  try {
   const sheet = getSheet(SHEETS.TIMESHEETS);
   const entrySheet = getSheet(SHEETS.TIMESHEET_ENTRIES);
   const tsId = ts.id || uid();
@@ -329,6 +332,9 @@ function handleSubmitTimesheet(ts) {
     entrySheet.appendRow([tsId, ts.employeeId, ts.date, en.vertical, en.note || "", en.hours]);
   });
   return { timesheetId: tsId };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function handleRejectTimesheet(data) {
@@ -606,10 +612,13 @@ function checkUser(email) {
 function sheetToObjects(sheetName) {
   const sheet = getSheet(sheetName);
   if (!sheet) return [];
-  const [headers, ...rows] = sheet.getDataRange().getValues();
+  const data = sheet.getDataRange().getValues();
+  if (data.length === 0) return [];
+  const [headers, ...rows] = data;
+  if (!headers || headers.length === 0) return [];
   return rows.map(row => {
     const obj = {};
-    headers.forEach((h, i) => { obj[h] = row[i]; });
+    headers.forEach((h, i) => { if (h) obj[h] = row[i] !== undefined ? row[i] : ""; });
     return obj;
   });
 }

@@ -147,9 +147,10 @@ const SHEETS_URL = process.env.NEXT_PUBLIC_SHEETS_URL || "";
 
 function sheetsPost(_url: string, action: string, data: any) {
   if (!SHEETS_URL) return;
+  // text/plain avoids CORS preflight; Apps Script reads e.postData.contents fine
   fetch(SHEETS_URL, {
     method: "POST",
-    mode: "no-cors",
+    headers: { "Content-Type": "text/plain" },
     body: JSON.stringify({ action, data }),
   }).catch(() => {});
 }
