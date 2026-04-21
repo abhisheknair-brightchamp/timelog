@@ -143,15 +143,12 @@ function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-const SHEETS_URL = process.env.NEXT_PUBLIC_SHEETS_URL || "";
-
 function sheetsPost(_url: string, action: string, data: any) {
-  if (!SHEETS_URL) return;
   fetch("/api/sheets", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, data }),
-  }).catch(() => {});
+  }).catch((e) => console.error("sheetsPost failed:", action, e));
 }
 
 /* ------------------------------------------------------------------ */
@@ -1015,7 +1012,7 @@ export const useStore = create<AppState>()(
             .map((r: any) => ({
               id: String(r.id),
               employeeId: String(r.employeeId),
-              date: String(r.date),
+              date: String(r.date).slice(0, 10),
               type: (r.type || "other") as LeaveType,
               note: String(r.note || ""),
               appliedAt: Number(r.appliedAt_UTC) || Date.now(),
@@ -1105,7 +1102,7 @@ export const useStore = create<AppState>()(
             .map((r: any) => ({
               id: String(r.id),
               employeeId: String(r.employeeId),
-              date: String(r.date),
+              date: String(r.date).slice(0, 10),
               entries: entryMap[r.id] || [],
               totalHours: Number(r.totalHours) || 0,
               capturedHours: Number(r.capturedHours) || 0,
