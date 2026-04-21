@@ -638,7 +638,7 @@ function sheetToObjects(sheetName) {
       if (!h) return;
       let val = row[i];
       if (val instanceof Date) {
-        val = Utilities.formatDate(val, "UTC", "yyyy-MM-dd");
+        val = Utilities.formatDate(val, Session.getScriptTimeZone(), "yyyy-MM-dd");
       }
       obj[h] = val !== undefined ? val : "";
     });
