@@ -147,10 +147,9 @@ const SHEETS_URL = process.env.NEXT_PUBLIC_SHEETS_URL || "";
 
 function sheetsPost(_url: string, action: string, data: any) {
   if (!SHEETS_URL) return;
-  // text/plain avoids CORS preflight; Apps Script reads e.postData.contents fine
-  fetch(SHEETS_URL, {
+  fetch("/api/sheets", {
     method: "POST",
-    headers: { "Content-Type": "text/plain" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, data }),
   }).catch(() => {});
 }
