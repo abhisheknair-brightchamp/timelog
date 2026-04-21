@@ -64,6 +64,7 @@ function LogToday() {
   }));
 
   const emp = employees.find((e) => e.id === currentEmployeeId)!;
+  if (!emp) return <div style={{ padding: 32, color: "var(--c-text-3)", fontSize: 13 }}>Loading…</div>;
   const tz = TIMEZONES.find((t) => t.iana === emp.timezone) || TIMEZONES[0];
   const todayLocal = new Date().toLocaleDateString("en-CA", { timeZone: emp.timezone });
 
@@ -340,6 +341,7 @@ function MyHistory() {
   }));
 
   const emp = employees.find((e) => e.id === currentEmployeeId)!;
+  if (!emp) return <div style={{ padding: 32, color: "var(--c-text-3)", fontSize: 13 }}>Loading…</div>;
   const todayLocal = new Date().toLocaleDateString("en-CA", { timeZone: emp.timezone });
 
   // Group my completed shifts by date
@@ -637,6 +639,7 @@ function MyLeaves() {
   }));
 
   const emp = employees.find((e) => e.id === currentEmployeeId)!;
+  if (!emp) return <div style={{ padding: 32, color: "var(--c-text-3)", fontSize: 13 }}>Loading…</div>;
   const todayLocal = new Date().toLocaleDateString("en-CA", { timeZone: emp.timezone });
   const myLeaves = leaves.filter((l) => l.employeeId === currentEmployeeId).sort((a, b) => b.date.localeCompare(a.date));
 
