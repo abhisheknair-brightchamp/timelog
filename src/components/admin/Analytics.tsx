@@ -2,18 +2,38 @@
 // src/components/admin/Analytics.tsx
 import { useState, useMemo } from "react";
 import { useStore } from "@/lib/store";
-import { PageShell, Card, SectionLabel, Avatar, Chip, StatCard } from "@/components/ui";
-import { tzByIana, getDayOfWeek } from "@/lib/utils";
+import { PageShell, Card, SectionLabel, Avatar, Chip, StatCard, InfoBanner } from "@/components/ui";
+import { tzByIana, getDayOfWeek, FIRST_USAGE_DATE } from "@/lib/utils";
 
 function dateRange(from: string, to: string): string[] {
   const out: string[] = [];
   if (!from || !to || from > to) return out;
-  const start = new Date(from + "T00:00:00");
-  const end = new Date(to + "T00:00:00");
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    out.push(d.toISOString().slice(0, 10));
+  // Iterate in UTC to keep YYYY-MM-DD strings stable regardless of browser tz.
+  const [fy, fm, fd] = from.split("-").map(Number);
+  const [ty, tm, td] = to.split("-").map(Number);
+  const end = Date.UTC(ty, tm - 1, td);
+  let cur = Date.UTC(fy, fm - 1, fd);
+  while (cur <= end) {
+    const dt = new Date(cur);
+    const y = dt.getUTCFullYear();
+    const m = String(dt.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(dt.getUTCDate()).padStart(2, "0");
+    out.push(`${y}-${m}-${d}`);
+    cur += 24 * 60 * 60 * 1000;
   }
   return out;
+}
+
+function localDateStr(ms: number): string {
+  const d = new Date(ms);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function clampFrom(d: string) {
+  return d < FIRST_USAGE_DATE ? FIRST_USAGE_DATE : d;
 }
 
 export default function Analytics() {
@@ -24,22 +44,25 @@ export default function Analytics() {
     holidays: s.holidays,
   }));
 
-  // Default: last 30 days ending today
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const thirtyAgo = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const todayStr = localDateStr(Date.now());
 
-  const [from, setFrom] = useState(thirtyAgo);
+  // Default: from FIRST_USAGE_DATE (or thirty days ago, whichever is later) to today
+  const defaultFrom = clampFrom(localDateStr(Date.now() - 29 * 24 * 60 * 60 * 1000));
+  const [from, setFrom] = useState(defaultFrom);
   const [to, setTo] = useState(todayStr);
 
-  const rangeDates = useMemo(() => dateRange(from, to), [from, to]);
+  const effectiveFrom = clampFrom(from);
+  const clampedFrom = from < FIRST_USAGE_DATE;
+  const rangeDates = useMemo(() => dateRange(effectiveFrom, to), [effectiveFrom, to]);
 
   const rows = useMemo(() => employees.map((e) => {
-    let hours = 0;
     let logged = 0;
     let missed = 0;
     let weekoffs = 0;
     let holidayCount = 0;
     let leaveCount = 0;
+    let loggedHours = 0;
+    let capturedHours = 0;
 
     rangeDates.forEach((d) => {
       const dow = getDayOfWeek(d);
@@ -51,44 +74,49 @@ export default function Analytics() {
       if (isWeekoff) { weekoffs++; return; }
       if (isHoliday) { holidayCount++; return; }
       if (leave) { leaveCount++; return; }
-      if (ts) { logged++; hours += ts.totalHours; return; }
-      // Only count "missed" if the date is in the past (not today, not future)
+      if (ts) {
+        logged++;
+        loggedHours += ts.totalHours;
+        capturedHours += ts.capturedHours ?? ts.totalHours;
+        return;
+      }
       if (d < todayStr) missed++;
     });
 
-    return { emp: e, hours, logged, missed, weekoffs, leaveCount, holidayCount };
+    return { emp: e, loggedHours, capturedHours, logged, missed, weekoffs, leaveCount, holidayCount };
   }), [employees, timesheets, leaves, holidays, rangeDates, todayStr]);
 
-  const totalHours = rows.reduce((a, r) => a + r.hours, 0);
+  const totalLoggedHours = rows.reduce((a, r) => a + r.loggedHours, 0);
+  const totalCapturedHours = rows.reduce((a, r) => a + r.capturedHours, 0);
   const totalLogged = rows.reduce((a, r) => a + r.logged, 0);
   const totalMissed = rows.reduce((a, r) => a + r.missed, 0);
   const totalLeaves = rows.reduce((a, r) => a + r.leaveCount, 0);
 
   function setPreset(days: number) {
-    const d = new Date(Date.now() - (days - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const d = clampFrom(localDateStr(Date.now() - (days - 1) * 24 * 60 * 60 * 1000));
     setFrom(d); setTo(todayStr);
   }
 
   function setThisMonth() {
     const now = new Date();
-    const first = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+    const first = clampFrom(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`);
     setFrom(first); setTo(todayStr);
   }
 
   const rangeLabel = `${rangeDates.length} day${rangeDates.length === 1 ? "" : "s"}`;
 
   return (
-    <PageShell title="Analytics" subtitle={`Date-range overview — ${from} to ${to} (${rangeLabel})`}>
+    <PageShell title="Analytics" subtitle={`Date-range overview — ${effectiveFrom} to ${to} (${rangeLabel})`}>
 
       <Card>
         <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
           <div>
             <label style={{ fontSize: 11, color: "var(--c-text-2)", display: "block", marginBottom: 4 }}>From</label>
-            <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
+            <input type="date" value={from} min={FIRST_USAGE_DATE} max={to} onChange={(e) => setFrom(e.target.value)} />
           </div>
           <div>
             <label style={{ fontSize: 11, color: "var(--c-text-2)", display: "block", marginBottom: 4 }}>To</label>
-            <input type="date" value={to} min={from} max={todayStr} onChange={(e) => setTo(e.target.value)} />
+            <input type="date" value={to} min={effectiveFrom} max={todayStr} onChange={(e) => setTo(e.target.value)} />
           </div>
           <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
             <button onClick={() => setPreset(7)} style={presetBtn}>Last 7 days</button>
@@ -98,11 +126,17 @@ export default function Analytics() {
         </div>
       </Card>
 
+      {clampedFrom && (
+        <InfoBanner>
+          System went live on <strong>{FIRST_USAGE_DATE}</strong> — earlier dates are excluded from the range.
+        </InfoBanner>
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 20 }}>
-        <StatCard label="Total hours worked" value={totalHours.toFixed(1) + "h"} color="var(--c-brand-dark)" />
-        <StatCard label="Days logged"        value={totalLogged} />
-        <StatCard label="Days missed"        value={totalMissed} color="#A32D2D" />
-        <StatCard label="Leaves taken"       value={totalLeaves} color="#185FA5" />
+        <StatCard label="Hours logged"   value={totalLoggedHours.toFixed(1) + "h"} color="var(--c-brand-dark)" />
+        <StatCard label="Hours captured" value={totalCapturedHours.toFixed(1) + "h"} color="#3C3489" />
+        <StatCard label="Days logged"    value={totalLogged} />
+        <StatCard label="Days missed"    value={totalMissed} color={totalMissed > 0 ? "#A32D2D" : undefined} />
       </div>
 
       <SectionLabel mt={0}>Per employee</SectionLabel>
@@ -110,21 +144,24 @@ export default function Analytics() {
         <table className="tbl" style={{ tableLayout: "fixed" }}>
           <thead>
             <tr>
-              <th style={{ width: "24%" }}>Employee</th>
+              <th style={{ width: "22%" }}>Employee</th>
               <th style={{ width: "10%" }}>Role</th>
-              <th style={{ width: "8%" }}>TZ</th>
-              <th style={{ width: "14%" }}>Hours</th>
-              <th style={{ width: "10%" }}>Logged</th>
-              <th style={{ width: "10%" }}>Missed</th>
-              <th style={{ width: "8%" }}>Leaves</th>
-              <th style={{ width: "8%" }}>Week off</th>
+              <th style={{ width: "6%" }}>TZ</th>
+              <th style={{ width: "14%" }}>Logged</th>
+              <th style={{ width: "12%" }}>Captured</th>
+              <th style={{ width: "8%" }}>Days</th>
+              <th style={{ width: "8%" }}>Missed</th>
+              <th style={{ width: "6%" }}>Leaves</th>
+              <th style={{ width: "6%" }}>Week off</th>
               <th style={{ width: "8%" }}>Holidays</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r, i) => {
               const tz = tzByIana(r.emp.timezone);
-              const below = r.logged > 0 && (r.hours / r.logged) < r.emp.minHoursPerDay;
+              const avgLogged = r.logged > 0 ? r.loggedHours / r.logged : 0;
+              const gap = r.capturedHours - r.loggedHours;
+              const bigGap = Math.abs(gap) >= 0.5;
               return (
                 <tr key={r.emp.id}>
                   <td>
@@ -139,10 +176,16 @@ export default function Analytics() {
                   <td><Chip label={r.emp.role} variant="green" tiny /></td>
                   <td style={{ fontSize: 11, color: "var(--c-text-3)" }}>{tz.short}</td>
                   <td>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--c-brand-dark)" }}>{r.hours.toFixed(1)}h</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--c-brand-dark)" }}>{r.loggedHours.toFixed(1)}h</span>
                     {r.logged > 0 && (
-                      <span style={{ fontSize: 10, color: below ? "#A32D2D" : "var(--c-text-3)", marginLeft: 6 }}>
-                        avg {(r.hours / r.logged).toFixed(1)}h
+                      <span style={{ fontSize: 10, color: "var(--c-text-3)", marginLeft: 6 }}>avg {avgLogged.toFixed(1)}h</span>
+                    )}
+                  </td>
+                  <td>
+                    <span style={{ fontSize: 13, color: "#3C3489" }}>{r.capturedHours.toFixed(1)}h</span>
+                    {bigGap && (
+                      <span style={{ fontSize: 10, color: gap > 0 ? "#854F0B" : "#A32D2D", marginLeft: 6 }}>
+                        {gap > 0 ? "+" : ""}{gap.toFixed(1)}h
                       </span>
                     )}
                   </td>

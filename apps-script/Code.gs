@@ -28,7 +28,7 @@ function setupSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const defs = {
     [SHEETS.EMPLOYEES]: ["id","name","email","role","verticals","timezone","weekoffs","minHoursPerDay","active","createdAt_UTC","createdAt_IST"],
-    [SHEETS.TIMESHEETS]: ["id","employeeId","employeeName","date","totalHours","submitted","submittedAt_UTC","submittedAt_IST","submittedFromTz","entryCount","startedAt_UTC","endedAt_UTC","status"],
+    [SHEETS.TIMESHEETS]: ["id","employeeId","employeeName","date","totalHours","submitted","submittedAt_UTC","submittedAt_IST","submittedFromTz","entryCount","startedAt_UTC","endedAt_UTC","status","capturedHours"],
     [SHEETS.TIMESHEET_ENTRIES]: ["timesheetId","employeeId","date","vertical","note","hours"],
     [SHEETS.AUDIT]: ["id","timestamp_UTC","timestamp_IST","type","actorId","actorName","subject","action","diffJSON"],
     [SHEETS.CONFIG]: ["key","value","updatedAt_IST"],
@@ -284,6 +284,7 @@ function handleSubmitTimesheet(ts) {
     ts.submittedAt || "", toIST(ts.submittedAt || 0),
     ts.submittedFromTz || "", (ts.entries || []).length,
     ts.startedAt || "", ts.endedAt || "", ts.status || (ts.submitted ? "submitted" : "in-progress"),
+    (typeof ts.capturedHours === "number") ? ts.capturedHours : "",
   ];
   if (rowIdx > 0) {
     sheet.getRange(rowIdx, 1, 1, tsRow.length).setValues([tsRow]);

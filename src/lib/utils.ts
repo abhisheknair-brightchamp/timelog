@@ -2,6 +2,9 @@
 import { clsx, type ClassValue } from "clsx";
 import type { DayStatus, Employee, Holiday, Timesheet } from "@/types";
 
+/** System go-live date — no day before this is considered "missed" in analytics. */
+export const FIRST_USAGE_DATE = "2026-04-21";
+
 export function cn(...inputs: ClassValue[]) {
   return clsx(inputs);
 }

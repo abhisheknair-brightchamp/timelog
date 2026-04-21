@@ -37,7 +37,8 @@ export interface Timesheet {
   employeeId: string;
   date: string; // YYYY-MM-DD in employee's local tz
   entries: TimesheetEntry[];
-  totalHours: number;
+  totalHours: number; // sum of entry hours (employee's breakdown)
+  capturedHours?: number; // wall-clock elapsed between startedAt and endedAt
   submitted: boolean;
   submittedAt?: number; // UTC ms
   submittedFromTz: string; // IANA

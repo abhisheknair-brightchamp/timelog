@@ -138,10 +138,17 @@ export default function Dashboard() {
                   <td><DayChip status={status} /></td>
                   <td>
                     {status === "logged" ? (
-                      <span>
-                        <span style={{ fontWeight: 500, color: "var(--c-brand-dark)" }}>{hrs.toFixed(1)}h</span>
-                        <span style={{ fontSize: 11, color: "var(--c-text-3)", marginLeft: 4 }}>/ {e.minHoursPerDay}h min</span>
-                      </span>
+                      <div>
+                        <div>
+                          <span style={{ fontWeight: 500, color: "var(--c-brand-dark)" }}>{hrs.toFixed(1)}h</span>
+                          <span style={{ fontSize: 11, color: "var(--c-text-3)", marginLeft: 4 }}>/ {e.minHoursPerDay}h target</span>
+                        </div>
+                        {typeof ts?.capturedHours === "number" && (
+                          <div style={{ fontSize: 10, color: "var(--c-text-3)", marginTop: 2 }}>
+                            {ts.capturedHours.toFixed(2)}h captured
+                          </div>
+                        )}
+                      </div>
                     ) : status === "in-progress" && ts?.startedAt ? (
                       <span style={{ fontSize: 11, color: "#3C3489" }}>
                         Clocked in {new Date(ts.startedAt).toLocaleTimeString("en-US", { timeZone: e.timezone, hour: "2-digit", minute: "2-digit", hour12: true })}

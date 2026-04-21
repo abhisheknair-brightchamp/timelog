@@ -337,10 +337,14 @@ export const useStore = create<AppState>()(
         if (!ts) return;
         const totalHours = entries.reduce((a, r) => a + (r.hours || 0), 0);
         const endedAt = Date.now();
+        const capturedHours = ts.startedAt
+          ? Math.round(((endedAt - ts.startedAt) / 3600000) * 100) / 100
+          : 0;
         const updated: Timesheet = {
           ...ts,
           entries,
           totalHours,
+          capturedHours,
           endedAt,
           submitted: true,
           submittedAt: endedAt,
@@ -350,11 +354,14 @@ export const useStore = create<AppState>()(
           timesheets: s.timesheets.map((t) => (t.id === tsId ? updated : t)),
         }));
         const emp = get().employees.find((e) => e.id === ts.employeeId);
+        const summary = entries.length
+          ? `${totalHours.toFixed(1)}h logged / ${capturedHours.toFixed(2)}h captured across ${entries.length} entr${entries.length === 1 ? "y" : "ies"}: ${entries.map((e) => `${e.vertical} (${e.hours}h)`).join(", ")}`
+          : `no work logged / ${capturedHours.toFixed(2)}h captured`;
         get().addAudit(
           "timesheet",
           ts.employeeId,
           emp?.name || ts.employeeId,
-          `Clocked out for ${ts.date} — ${totalHours.toFixed(1)}h across ${entries.length} entr${entries.length === 1 ? "y" : "ies"}: ${entries.map((e) => `${e.vertical} (${e.hours}h)`).join(", ")}`
+          `Clocked out for ${ts.date} — ${summary}`
         );
         sheetsPost(get().config.sheetsUrl, "submitTimesheet", updated);
       },

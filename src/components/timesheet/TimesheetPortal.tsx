@@ -102,14 +102,22 @@ function LogToday() {
 
   function onClockOut() {
     if (!ts) return;
-    for (const row of rows) {
-      if (!row.vertical) { showToast("Vertical is required for all entries"); return; }
-      if (!row.hours || row.hours <= 0) { showToast("Hours required for all entries"); return; }
+    // Drop empty rows, but any partially-filled row must be fully valid.
+    const filled = rows.filter((r) => r.vertical || r.hours > 0 || r.note);
+    for (const row of filled) {
+      if (!row.vertical) { showToast("Vertical is required for all filled entries"); return; }
+      if (!row.hours || row.hours <= 0) { showToast("Hours required for all filled entries"); return; }
     }
-    const total = rows.reduce((a, r) => a + (r.hours || 0), 0);
-    if (total < emp.minHoursPerDay) { showToast(`Minimum ${emp.minHoursPerDay}h required — entered ${total.toFixed(1)}h`); return; }
-    endWorkday(ts.id, rows);
-    showToast(`Clocked out — ${total.toFixed(1)}h logged`);
+    const total = filled.reduce((a, r) => a + (r.hours || 0), 0);
+    const capturedMs = ts.startedAt ? Date.now() - ts.startedAt : 0;
+    const capturedHrs = capturedMs / 3600000;
+    endWorkday(ts.id, filled);
+    const belowMin = total < emp.minHoursPerDay;
+    showToast(
+      belowMin
+        ? `Clocked out — ${total.toFixed(1)}h logged / ${capturedHrs.toFixed(2)}h captured (below ${emp.minHoursPerDay}h min)`
+        : `Clocked out — ${total.toFixed(1)}h logged / ${capturedHrs.toFixed(2)}h captured`
+    );
   }
 
   function submitLeave() {
@@ -193,8 +201,7 @@ function LogToday() {
               </Card>
 
               <InfoBanner>
-                Fill in what you worked on — hours must total at least <strong>{emp.minHoursPerDay}h</strong>.
-                Elapsed time suggests <strong>{suggestedHours.toFixed(1)}h</strong>.
+                Fill in what you worked on. You can clock out anytime — captured time ({suggestedHours.toFixed(1)}h so far) is always saved separately from the breakdown you enter. Target is <strong>{emp.minHoursPerDay}h</strong>.
               </InfoBanner>
 
               <Card>
@@ -220,7 +227,7 @@ function LogToday() {
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 12, borderTop: "0.5px solid var(--c-border)", marginTop: 4 }}>
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <Button size="xs" onClick={addRow}>+ Add row</Button>
-                    <span style={{ fontSize: 11, color: "var(--c-text-3)" }}>Min {emp.minHoursPerDay}h required</span>
+                    <span style={{ fontSize: 11, color: "var(--c-text-3)" }}>Target {emp.minHoursPerDay}h · partial is OK</span>
                   </div>
                   <Button variant="primary" size="sm" onClick={onClockOut}>■ Clock out &amp; submit</Button>
                 </div>
@@ -248,9 +255,16 @@ function LogToday() {
                     ? `${fmtClock(ts.startedAt, emp.timezone)} → ${fmtClock(ts.endedAt, emp.timezone)}`
                     : ts.submittedAt ? `Submitted ${fmtIST(ts.submittedAt)}` : ""}
                 </div>
-                <span style={{ fontSize: 14, fontWeight: 500, color: "var(--c-brand-dark)" }}>
-                  {ts.totalHours.toFixed(1)}h logged
-                </span>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: "var(--c-brand-dark)" }}>
+                    {ts.totalHours.toFixed(1)}h logged
+                  </div>
+                  {typeof ts.capturedHours === "number" && (
+                    <div style={{ fontSize: 11, color: "var(--c-text-3)", marginTop: 2 }}>
+                      {ts.capturedHours.toFixed(2)}h on the clock
+                    </div>
+                  )}
+                </div>
               </div>
             </Card>
           )}
@@ -424,7 +438,10 @@ function MyHistory() {
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                   <span style={{ fontSize: 13, fontWeight: 500 }}>{dl}</span>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--c-brand-dark)" }}>{ts.totalHours.toFixed(1)}h</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--c-brand-dark)" }}>{ts.totalHours.toFixed(1)}h logged</span>
+                    {typeof ts.capturedHours === "number" && (
+                      <span style={{ fontSize: 11, color: "var(--c-text-3)" }}>· {ts.capturedHours.toFixed(2)}h captured</span>
+                    )}
                     {tsQueries.length > 0 && <Chip label={`${tsQueries.length} query${tsQueries.length === 1 ? "" : "ies"}`} variant="amber" />}
                     <Chip label="Submitted" variant="green" />
                   </div>
