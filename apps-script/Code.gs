@@ -36,7 +36,7 @@ function setupSheets() {
     [SHEETS.USERS]: ["email","passwordHash","role","createdAt_UTC","createdAt_IST"],
     [SHEETS.SESSIONS]: ["email","otp","expiresAt_UTC","createdAt_UTC"],
     [SHEETS.LEAVES]: ["id","employeeId","date","type","note","appliedAt_UTC","appliedAt_IST"],
-    [SHEETS.QUERIES]: ["id","timesheetId","employeeId","byActorId","byActorName","question","response","status","createdAt_UTC","createdAt_IST","respondedAt_UTC","resolvedAt_UTC"],
+    [SHEETS.QUERIES]: ["id","timesheetId","employeeId","byActorId","byActorName","question","response","status","createdAt_UTC","createdAt_IST","respondedAt_UTC","resolvedAt_UTC","messagesJSON"],
   };
   Object.entries(defs).forEach(([name, headers]) => {
     let sheet = ss.getSheetByName(name);
@@ -117,6 +117,10 @@ function doPost(e) {
       rejectTimesheet:  handleRejectTimesheet,
       reverseRejection: handleReverseRejection,
       resetShift:       handleResetShift,
+      resetCheckin:     handleResetCheckin,
+      resetCheckout:    handleResetCheckout,
+      // Query messages
+      addQueryMessage:  handleAddQueryMessage,
     };
     if (!handlers[action]) return jsonResponse({ ok: false, error: "Unknown action: " + action });
     const result = handlers[action](data);
@@ -462,27 +466,47 @@ function handleCreateQuery(q) {
   const sheet = getSheet(SHEETS.QUERIES);
   if (!sheet) return { ok: false, error: "Queries sheet missing — re-run setupSheets()" };
   const now = q.createdAt || Date.now();
+  const initialMessages = q.messages || [{ id: uid(), role: "admin", actorName: q.byActorName || "Admin", text: q.question, createdAt: now }];
   sheet.appendRow([
     q.id || uid(), q.timesheetId, q.employeeId,
     q.byActorId, q.byActorName || "",
-    q.question, q.response || "", q.status || "open",
+    q.question, "", q.status || "open",
     now, toIST(now), "", "",
+    JSON.stringify(initialMessages),
   ]);
   return { ok: true };
 }
 
-function handleRespondQuery(data) {
+function handleAddQueryMessage(data) {
+  // data = { id: queryId, msg: { id, role, actorName, text, createdAt } }
   const sheet = getSheet(SHEETS.QUERIES);
   if (!sheet) return { ok: false, error: "Queries sheet missing" };
   const rows = sheet.getDataRange().getValues();
   for (let i = 1; i < rows.length; i++) {
     if (rows[i][0] === data.id) {
-      sheet.getRange(i + 1, 7).setValue(data.response || "");
-      sheet.getRange(i + 1, 11).setValue(data.respondedAt || Date.now());
+      // Parse existing messages (col 13)
+      let messages = [];
+      try { messages = JSON.parse(rows[i][12] || "[]"); } catch(e) { messages = []; }
+      // If messages was empty, seed with the original question
+      if (!messages.length && rows[i][5]) {
+        messages = [{ id: uid(), role: "admin", actorName: rows[i][4] || "Admin", text: rows[i][5], createdAt: rows[i][8] || Date.now() }];
+      }
+      messages.push(data.msg);
+      sheet.getRange(i + 1, 13).setValue(JSON.stringify(messages));
+      // If employee reply, also update response + respondedAt cols
+      if (data.msg.role === "employee") {
+        sheet.getRange(i + 1, 7).setValue(data.msg.text);
+        sheet.getRange(i + 1, 11).setValue(data.msg.createdAt || Date.now());
+      }
       return { ok: true };
     }
   }
   return { ok: false, error: "Query not found" };
+}
+
+function handleRespondQuery(data) {
+  // Legacy — treated as employee message
+  return handleAddQueryMessage({ id: data.id, msg: { id: uid(), role: "employee", actorName: "Employee", text: data.response, createdAt: data.respondedAt || Date.now() } });
 }
 
 function handleResolveQuery(data) {
@@ -497,6 +521,41 @@ function handleResolveQuery(data) {
     }
   }
   return { ok: false, error: "Query not found" };
+}
+
+function handleResetCheckin(data) {
+  const sheet = getSheet(SHEETS.TIMESHEETS);
+  const rows = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][0] === data.id) {
+      sheet.getRange(i + 1, 5).setValue(0);          // totalHours
+      sheet.getRange(i + 1, 6).setValue("FALSE");    // submitted
+      sheet.getRange(i + 1, 7).setValue("");          // submittedAt_UTC
+      sheet.getRange(i + 1, 11).setValue("");         // startedAt_UTC
+      sheet.getRange(i + 1, 12).setValue("");         // endedAt_UTC
+      sheet.getRange(i + 1, 13).setValue("in-progress"); // status
+      sheet.getRange(i + 1, 14).setValue(0);          // capturedHours
+      return { ok: true };
+    }
+  }
+  return { ok: false, error: "Shift not found" };
+}
+
+function handleResetCheckout(data) {
+  const sheet = getSheet(SHEETS.TIMESHEETS);
+  const rows = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][0] === data.id) {
+      sheet.getRange(i + 1, 5).setValue(0);          // totalHours
+      sheet.getRange(i + 1, 6).setValue("FALSE");    // submitted
+      sheet.getRange(i + 1, 7).setValue("");          // submittedAt_UTC
+      sheet.getRange(i + 1, 12).setValue("");         // endedAt_UTC
+      sheet.getRange(i + 1, 13).setValue("in-progress"); // status
+      sheet.getRange(i + 1, 14).setValue(0);          // capturedHours
+      return { ok: true };
+    }
+  }
+  return { ok: false, error: "Shift not found" };
 }
 
 // ─── GET helpers ──────────────────────────────────────────────────────────────

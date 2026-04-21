@@ -22,12 +22,17 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
 
   async function fetchAndLoad() {
+    if (!API_URL) return; // Sheets not configured — run on localStorage only
     try {
-      const res = await fetch(API_URL + "?action=getAll", { redirect: "follow" });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12000); // 12s max
+      const res = await fetch(API_URL + "?action=getAll", { redirect: "follow", signal: controller.signal });
+      clearTimeout(timeout);
       const data = await res.json();
       if (data.employees) loadFromSheets(data);
-    } catch (e) {
-      console.error("Failed to load from Sheets:", e);
+    } catch (e: any) {
+      if (e?.name !== "AbortError") console.error("Sheets sync failed:", e);
+      // App continues with cached localStorage data
     }
   }
 
@@ -36,8 +41,8 @@ export default function Home() {
       const session = getSession();
       if (session) {
         setAuth(session.email, session.role, session.employeeId);
-        // Don't await — Zustand already has data from localStorage.
-        // Sheets sync runs in background and updates state when ready.
+        // Employees are cached in localStorage (partialize) so the app renders
+        // instantly. We still await Sheets for fresh timesheets/queries.
         await fetchAndLoad();
       }
       setLoading(false);
@@ -48,7 +53,7 @@ export default function Home() {
   async function handleAuthenticated(data: { email: string; role: string; employeeId?: string | null }) {
     saveSession(data);
     setAuth(data.email, data.role, data.employeeId);
-    await fetchAndLoad(); // background sync, don't block login transition
+    await fetchAndLoad(); // sync fresh data before entering the app
   }
 
   if (loading) {

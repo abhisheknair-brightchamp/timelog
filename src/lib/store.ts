@@ -1024,23 +1024,35 @@ export const useStore = create<AppState>()(
         if (data.queries?.length) {
           const queries: TimesheetQuery[] = data.queries
             .filter((r: any) => r.id && r.timesheetId)
-            .map((r: any) => ({
-              id: String(r.id),
-              timesheetId: String(r.timesheetId),
-              employeeId: String(r.employeeId),
-              byActorId: String(r.byActorId),
-              byActorName: String(r.byActorName || ""),
-              question: String(r.question || ""),
-              response: r.response ? String(r.response) : undefined,
-              status: r.status === "resolved" ? "resolved" : "open",
-              createdAt: Number(r.createdAt_UTC) || Date.now(),
-              respondedAt: r.respondedAt_UTC
-                ? Number(r.respondedAt_UTC)
-                : undefined,
-              resolvedAt: r.resolvedAt_UTC
-                ? Number(r.resolvedAt_UTC)
-                : undefined,
-            }));
+            .map((r: any) => {
+              const question = String(r.question || "");
+              const createdAt = Number(r.createdAt_UTC) || Date.now();
+              // Reconstruct messages: prefer persisted messagesJSON, else build from question+response
+              let messages: QueryMessage[] = [];
+              if (r.messagesJSON) {
+                try { messages = JSON.parse(r.messagesJSON); } catch {}
+              }
+              if (!messages.length) {
+                messages = [{ id: r.id + "_q", role: "admin", actorName: String(r.byActorName || "Admin"), text: question, createdAt }];
+                if (r.response) {
+                  messages.push({ id: r.id + "_r", role: "employee", actorName: "Employee", text: String(r.response), createdAt: Number(r.respondedAt_UTC) || createdAt + 1 });
+                }
+              }
+              return {
+                id: String(r.id),
+                timesheetId: String(r.timesheetId),
+                employeeId: String(r.employeeId),
+                byActorId: String(r.byActorId),
+                byActorName: String(r.byActorName || ""),
+                question,
+                response: r.response ? String(r.response) : undefined,
+                messages,
+                status: (r.status === "resolved" ? "resolved" : "open") as "open" | "resolved",
+                createdAt,
+                respondedAt: r.respondedAt_UTC ? Number(r.respondedAt_UTC) : undefined,
+                resolvedAt: r.resolvedAt_UTC ? Number(r.resolvedAt_UTC) : undefined,
+              };
+            });
           if (queries.length) set({ queries });
         }
 
@@ -1164,12 +1176,17 @@ export const useStore = create<AppState>()(
       },
     }),
     {
-      name: "timelog-v1",
+      name: "timelog-v2",
       partialize: (state) => ({
+        // Auth
         currentEmployeeId: state.currentEmployeeId,
         currentEmail: state.currentEmail,
         isAuthenticated: state.isAuthenticated,
         portal: state.portal,
+        // Cache employees so the app renders instantly on reload without
+        // waiting for Sheets. Sheets sync will overwrite with fresh data.
+        employees: state.employees,
+        config: state.config,
       }),
     }
   )
