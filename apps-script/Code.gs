@@ -54,6 +54,22 @@ function setupSheets() {
 function migrateSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
+  // Fix Timesheets header — ensure all 18 columns are present
+  const tsExpected = ["id","employeeId","employeeName","date","totalHours","submitted","submittedAt_UTC","submittedAt_IST","submittedFromTz","entryCount","startedAt_UTC","endedAt_UTC","status","capturedHours","rejectedAt_UTC","rejectedBy","rejectedByName","rejectionReason"];
+  const tsSheet = ss.getSheetByName(SHEETS.TIMESHEETS);
+  if (tsSheet) {
+    const lastCol = tsSheet.getLastColumn();
+    const headers = lastCol > 0 ? tsSheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
+    tsExpected.forEach((col, i) => {
+      if (!headers.includes(col)) {
+        tsSheet.getRange(1, i + 1).setValue(col);
+        tsSheet.getRange(1, i + 1).setFontWeight("bold").setBackground("#4B3DE3").setFontColor("#ffffff");
+        Logger.log("✓ Added Timesheets header: " + col + " at col " + (i + 1));
+      }
+    });
+    Logger.log("✓ Timesheets headers checked");
+  }
+
   // Add messagesJSON column to Queries sheet if missing
   const qSheet = ss.getSheetByName(SHEETS.QUERIES);
   if (qSheet) {
