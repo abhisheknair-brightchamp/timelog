@@ -8,16 +8,16 @@
   --font-body: 'Nunito', system-ui, sans-serif;
   --font-mono: 'DM Mono', monospace;
 
-  /* BrightChamps brand — indigo/purple */
-  --c-brand: #4B3DE3;
+  /* BrightChamps brand — purple */
+  --c-brand: #6B5CE7;
   --c-brand-light: #EEEDFE;
-  --c-brand-dark: #3328C0;
-  --c-brand-border: #B5B0F5;
+  --c-brand-dark: #5548CC;
+  --c-brand-border: #B8B2F5;
 
   --c-surface: #ffffff;
   --c-bg: #F7F6FD;
-  --c-border: rgba(75,61,227,0.08);
-  --c-border-strong: rgba(75,61,227,0.16);
+  --c-border: rgba(107,92,231,0.08);
+  --c-border-strong: rgba(107,92,231,0.16);
 
   --c-text: #1a1830;
   --c-text-2: #52506e;
@@ -84,7 +84,7 @@ input:disabled, select:disabled {
   line-height: 1;
 }
 .btn:hover { background: var(--c-bg); box-shadow: 0 2px 8px rgba(75,61,227,0.08); }
-.btn-primary { background: var(--c-brand); color: #fff; border-color: var(--c-brand); box-shadow: 0 2px 8px rgba(75,61,227,0.25); }
+.btn-primary { background: var(--c-brand); color: #fff; border-color: var(--c-brand); box-shadow: 0 2px 8px rgba(107,92,231,0.3); }
 .btn-primary:hover { opacity: 0.88; background: var(--c-brand); }
 .btn-danger  { background: #FCEBEB; color: #A32D2D; border-color: #F09595; }
 .btn-sm { padding: 5px 12px; font-size: 12px; }

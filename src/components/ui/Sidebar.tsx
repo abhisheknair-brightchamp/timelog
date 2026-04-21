@@ -123,7 +123,7 @@ export default function Sidebar() {
               width: "100%", textAlign: "left", padding: "8px 12px",
               fontSize: 13, borderRadius: 9, border: "none", cursor: "pointer",
               marginBottom: 2, fontFamily: "var(--font-body)", transition: "all 0.1s",
-              background: active ? "rgba(75,61,227,0.22)" : "transparent",
+              background: active ? "rgba(107,92,231,0.22)" : "transparent",
               color: active ? "#B5B0F5" : "rgba(255,255,255,0.45)",
               fontWeight: active ? 600 : 400,
               display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -152,7 +152,7 @@ export default function Sidebar() {
             width: 30, height: 30, borderRadius: "50%", flexShrink: 0,
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: 10, fontWeight: 700,
-            background: isAdmin ? "rgba(75,61,227,0.3)" : color.bg,
+            background: isAdmin ? "rgba(107,92,231,0.3)" : color.bg,
             color: isAdmin ? "#B5B0F5" : color.text,
           }}>
             {isAdmin ? "AD" : initials(emp?.name || "?")}
@@ -167,7 +167,7 @@ export default function Sidebar() {
           </div>
           <div style={{
             fontSize: 9, fontWeight: 600, padding: "2px 7px", borderRadius: 999,
-            background: "rgba(75,61,227,0.3)", color: "#B5B0F5", flexShrink: 0, textTransform: "capitalize",
+            background: "rgba(107,92,231,0.3)", color: "#B5B0F5", flexShrink: 0, textTransform: "capitalize",
           }}>
             {portal}
           </div>
