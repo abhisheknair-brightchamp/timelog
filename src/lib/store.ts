@@ -17,9 +17,13 @@ import { nowInTz, todayInTz, dateKey } from "./utils";
 interface AppState {
   // Auth / session
   currentEmployeeId: string; // "admin" or employee id
+  currentEmail: string;
+  isAuthenticated: boolean;
   portal: Portal;
   setPortal: (p: Portal) => void;
   setCurrentEmployee: (id: string) => void;
+  setAuth: (email: string, role: string, employeeId?: string | null) => void;
+  logout: () => void;
 
   // Org config
   config: OrgConfig;
@@ -135,10 +139,28 @@ const SEED_EMPLOYEES: Employee[] = [
 export const useStore = create<AppState>()(
   persist(
     (set, get) => ({
-      currentEmployeeId: "admin",
+      currentEmployeeId: "",
+      currentEmail: "",
+      isAuthenticated: false,
       portal: "admin",
       setPortal: (portal) => set({ portal }),
       setCurrentEmployee: (id) => set({ currentEmployeeId: id }),
+      setAuth: (email, role, employeeId) => {
+        set({
+          currentEmail: email,
+          currentEmployeeId: employeeId || "admin",
+          isAuthenticated: true,
+          portal: role === "admin" ? "admin" : "timesheet",
+        });
+      },
+      logout: () => {
+        set({
+          currentEmail: "",
+          currentEmployeeId: "",
+          isAuthenticated: false,
+          portal: "admin",
+        });
+      },
 
       config: {
         roles: ["Admin", "Instructor", "Team Lead", "Trainer"],

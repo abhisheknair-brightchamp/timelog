@@ -32,10 +32,13 @@ function emitPage(page: string) {
 }
 
 export default function Sidebar() {
-  const { portal, setPortal, employees } = useStore((s) => ({
+  const { portal, setPortal, employees, currentEmployeeId, currentEmail, logout } = useStore((s) => ({
     portal: s.portal,
     setPortal: s.setPortal,
     employees: s.employees,
+    currentEmployeeId: s.currentEmployeeId,
+    currentEmail: s.currentEmail,
+    logout: s.logout,
   }));
 
   const [activePage, setActivePage] = useState(NAV[portal][0].id);
@@ -52,12 +55,21 @@ export default function Sidebar() {
     return () => window.removeEventListener("tl:page", handler);
   }, []);
 
-  const isAdmin = portal === "admin";
-  const emp = employees.find((e) => e.id === "e1");
-  const empIdx = employees.findIndex((e) => e.id === "e1");
-  const color = empColor(empIdx);
+  const isAdmin = currentEmployeeId === "admin";
+  const emp = employees.find((e) => e.id === currentEmployeeId);
+  const empIdx = employees.findIndex((e) => e.id === currentEmployeeId);
+  const color = empColor(empIdx >= 0 ? empIdx : 0);
   const portals: Portal[] = ["admin", "account", "timesheet"];
   const portalLabels: Record<Portal, string> = { admin: "Admin", account: "Account", timesheet: "Sheet" };
+
+  function handleLogout() {
+    logout();
+    if (typeof window !== "undefined") {
+      const { clearSession } = require("@/lib/auth");
+      clearSession();
+      window.location.reload();
+    }
+  }
 
   return (
     <aside style={{
@@ -128,7 +140,7 @@ export default function Sidebar() {
 
       {/* User footer */}
       <div style={{ padding: "12px 14px", borderTop: "0.5px solid rgba(255,255,255,0.06)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
           <div style={{
             width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -140,10 +152,10 @@ export default function Sidebar() {
           </div>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontSize: 12, fontWeight: 500, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {isAdmin ? "Admin" : emp?.name.split(" ")[0]}
+              {isAdmin ? "Admin" : emp?.name.split(" ")[0] || currentEmail.split("@")[0]}
             </div>
             <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)" }}>
-              {isAdmin ? "Administrator" : emp?.role}
+              {isAdmin ? "Administrator" : emp?.role || "Teacher"}
             </div>
           </div>
           <div style={{
@@ -153,6 +165,25 @@ export default function Sidebar() {
             {portal}
           </div>
         </div>
+        <button
+          onClick={handleLogout}
+          style={{
+            width: "100%", padding: "6px 10px", fontSize: 11, fontWeight: 500,
+            borderRadius: 7, border: "0.5px solid rgba(255,255,255,0.1)",
+            background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.6)",
+            cursor: "pointer", fontFamily: "var(--font-body)", transition: "all 0.1s",
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.08)";
+            (e.currentTarget as HTMLElement).style.color = "#fff";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.05)";
+            (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.6)";
+          }}
+        >
+          Sign Out
+        </button>
       </div>
     </aside>
   );

@@ -43,7 +43,7 @@ export function HolidaysPage() {
 export default HolidaysPage;
 
 // ─── TeamView ─────────────────────────────────────────────────────────────────
-import { Chip, Avatar} from "@/components/ui";
+import { Chip, Avatar } from "@/components/ui";
 
 export function TeamView() {
   const { employees, config } = useStore((s) => ({ employees: s.employees, config: s.config }));

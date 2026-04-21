@@ -11,8 +11,6 @@ import {
 } from "@/lib/utils";
 import type { DayStatus, TimesheetEntry, LeaveType } from "@/types";
 
-const DEMO_EMP_ID = "e1";
-
 const LEAVE_TYPES: { id: LeaveType; label: string; color: string; bg: string }[] = [
   { id: "sick",   label: "Sick leave",   color: "#A32D2D", bg: "#FCEBEB" },
   { id: "annual", label: "Annual leave", color: "#185FA5", bg: "#E6F1FB" },
@@ -40,21 +38,22 @@ export default function TimesheetPortal() {
 
 // ─── Log Today ────────────────────────────────────────────────────────────────
 function LogToday() {
-  const { employees, holidays, timesheets, leaves, config, submitTimesheet, getTimesheet, getLeave, applyLeave } = useStore((s) => ({
+  const { employees, holidays, timesheets, leaves, config, submitTimesheet, getTimesheet, getLeave, applyLeave, currentEmployeeId } = useStore((s) => ({
     employees: s.employees, holidays: s.holidays,
     timesheets: s.timesheets, leaves: s.leaves, config: s.config,
     submitTimesheet: s.submitTimesheet, getTimesheet: s.getTimesheet,
     getLeave: s.getLeave, applyLeave: s.applyLeave,
+    currentEmployeeId: s.currentEmployeeId,
   }));
 
-  const emp = employees.find((e) => e.id === DEMO_EMP_ID)!;
+  const emp = employees.find((e) => e.id === currentEmployeeId)!;
   const tz = TIMEZONES.find((t) => t.iana === emp.timezone) || TIMEZONES[0];
   const todayLocal = new Date().toLocaleDateString("en-CA", { timeZone: emp.timezone });
 
   const status: DayStatus = getDayStatus(emp, todayLocal, holidays, timesheets, todayLocal, leaves);
-  const ts = getTimesheet(DEMO_EMP_ID, todayLocal);
+  const ts = getTimesheet(currentEmployeeId, todayLocal);
   const submitted = ts?.submitted ?? false;
-  const leave = getLeave(DEMO_EMP_ID, todayLocal);
+  const leave = getLeave(currentEmployeeId, todayLocal);
   const holiday = holidays.find((h) => h.date === todayLocal);
 
   const [rows, setRows] = useState<TimesheetEntry[]>([
@@ -81,12 +80,12 @@ function LogToday() {
     }
     const total = rows.reduce((a, r) => a + (r.hours || 0), 0);
     if (total < emp.minHoursPerDay) { showToast(`Minimum ${emp.minHoursPerDay}h required — entered ${total.toFixed(1)}h`); return; }
-    submitTimesheet({ employeeId: DEMO_EMP_ID, date: todayLocal, entries: rows, totalHours: total, submitted: true, submittedAt: Date.now(), submittedFromTz: emp.timezone });
+    submitTimesheet({ employeeId: currentEmployeeId, date: todayLocal, entries: rows, totalHours: total, submitted: true, submittedAt: Date.now(), submittedFromTz: emp.timezone });
     showToast(`Submitted — ${total.toFixed(1)}h logged`);
   }
 
   function submitLeave() {
-    applyLeave(DEMO_EMP_ID, todayLocal, leaveType, leaveNote);
+    applyLeave(currentEmployeeId, todayLocal, leaveType, leaveNote);
     setShowLeaveForm(false);
     showToast("Leave applied");
   }
@@ -229,14 +228,15 @@ function LogToday() {
 
 // ─── My History ───────────────────────────────────────────────────────────────
 function MyHistory() {
-  const { employees, holidays, timesheets, leaves } = useStore((s) => ({
+  const { employees, holidays, timesheets, leaves, currentEmployeeId } = useStore((s) => ({
     employees: s.employees, holidays: s.holidays,
     timesheets: s.timesheets, leaves: s.leaves,
+    currentEmployeeId: s.currentEmployeeId,
   }));
 
-  const emp = employees.find((e) => e.id === DEMO_EMP_ID)!;
+  const emp = employees.find((e) => e.id === currentEmployeeId)!;
   const todayLocal = new Date().toLocaleDateString("en-CA", { timeZone: emp.timezone });
-  const empTimesheets = timesheets.filter((t) => t.employeeId === DEMO_EMP_ID && t.submitted).sort((a, b) => b.date.localeCompare(a.date));
+  const empTimesheets = timesheets.filter((t) => t.employeeId === currentEmployeeId && t.submitted).sort((a, b) => b.date.localeCompare(a.date));
 
   const now = new Date();
   const yr = now.getFullYear(), mo = now.getMonth();
@@ -269,7 +269,7 @@ function MyHistory() {
           <div style={{ fontSize: 11, color: "var(--c-text-2)", marginTop: 2 }}>Days submitted</div>
         </div>
         <div style={{ background: "var(--c-bg)", borderRadius: "var(--r-md)", padding: "12px 14px" }}>
-          <div style={{ fontSize: 20, fontWeight: 500 }}>{leaves.filter((l) => l.employeeId === DEMO_EMP_ID).length}</div>
+          <div style={{ fontSize: 20, fontWeight: 500 }}>{leaves.filter((l) => l.employeeId === currentEmployeeId).length}</div>
           <div style={{ fontSize: 11, color: "var(--c-text-2)", marginTop: 2 }}>Leaves taken</div>
         </div>
       </div>
@@ -342,15 +342,16 @@ function MyHistory() {
 
 // ─── My Leaves ────────────────────────────────────────────────────────────────
 function MyLeaves() {
-  const { employees, leaves, applyLeave, cancelLeave, holidays, timesheets } = useStore((s) => ({
+  const { employees, leaves, applyLeave, cancelLeave, holidays, timesheets, currentEmployeeId } = useStore((s) => ({
     employees: s.employees, leaves: s.leaves,
     applyLeave: s.applyLeave, cancelLeave: s.cancelLeave,
     holidays: s.holidays, timesheets: s.timesheets,
+    currentEmployeeId: s.currentEmployeeId,
   }));
 
-  const emp = employees.find((e) => e.id === DEMO_EMP_ID)!;
+  const emp = employees.find((e) => e.id === currentEmployeeId)!;
   const todayLocal = new Date().toLocaleDateString("en-CA", { timeZone: emp.timezone });
-  const myLeaves = leaves.filter((l) => l.employeeId === DEMO_EMP_ID).sort((a, b) => b.date.localeCompare(a.date));
+  const myLeaves = leaves.filter((l) => l.employeeId === currentEmployeeId).sort((a, b) => b.date.localeCompare(a.date));
 
   const [date, setDate] = useState("");
   const [type, setType] = useState<LeaveType>("annual");
@@ -363,7 +364,7 @@ function MyLeaves() {
     if (status === "weekoff") { showToast("That day is already your week off"); return; }
     if (status === "holiday") { showToast("That day is a public holiday"); return; }
     if (status === "leave")   { showToast("Leave already applied for that date"); return; }
-    applyLeave(DEMO_EMP_ID, date, type, note);
+    applyLeave(currentEmployeeId, date, type, note);
     setDate(""); setNote("");
     showToast("Leave applied for " + date);
   }
