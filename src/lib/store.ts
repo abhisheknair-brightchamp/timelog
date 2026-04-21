@@ -374,7 +374,6 @@ export const useStore = create<AppState>()(
           const updates: Partial<OrgConfig> = {};
           if (configMap.roles) updates.roles = configMap.roles.split(",").map((s: string) => s.trim()).filter(Boolean);
           if (configMap.verticals) updates.verticals = configMap.verticals.split(",").map((s: string) => s.trim()).filter(Boolean);
-          if (configMap.orgName) updates.orgName = configMap.orgName;
           if (Object.keys(updates).length) set((s) => ({ config: { ...s.config, ...updates } }));
         }
       },
