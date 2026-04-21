@@ -118,12 +118,12 @@ export function getDayStatus(
   const dow = getDayOfWeek(date);
   if (employee.weekoffs.includes(dow)) return "weekoff";
   if (holidays.some((h) => h.date === date)) return "holiday";
-  if (leaves?.some((l) => l.employeeId === employee.id && l.date === date)) return "leave";
   const sameDayShifts = timesheets.filter(
     (t) => t.employeeId === employee.id && t.date === date
   );
   if (sameDayShifts.some((t) => t.status === "in-progress")) return "in-progress";
   if (sameDayShifts.some((t) => t.submitted && t.status !== "rejected")) return "logged";
+  if (leaves?.some((l) => l.employeeId === employee.id && l.date === date)) return "leave";
   if (date < todayStr) return "missing";
   if (date === todayStr) return "upcoming";
   return "future";
