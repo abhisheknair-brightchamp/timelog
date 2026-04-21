@@ -1,5 +1,4 @@
 "use client";
-// src/app/page.tsx
 import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
 import { getSession, saveSession, clearSession } from "@/lib/auth";
@@ -17,17 +16,13 @@ export default function Home() {
     setAuth: s.setAuth,
     currentEmployeeId: s.currentEmployeeId,
   }));
-
   const [loading, setLoading] = useState(true);
 
-  // Check for existing session on mount
   useEffect(() => {
     const session = getSession();
-    if (session) {
-      setAuth(session.email, session.role, session.employeeId);
-    }
+    if (session) setAuth(session.email, session.role, session.employeeId);
     setLoading(false);
-  }, [setAuth]);
+  }, []);
 
   function handleAuthenticated(data: { email: string; role: string; employeeId?: string | null }) {
     saveSession(data);
@@ -42,17 +37,19 @@ export default function Home() {
     );
   }
 
-  if (!isAuthenticated) {
-    return <LoginPage onAuthenticated={handleAuthenticated} />;
-  }
+  if (!isAuthenticated) return <LoginPage onAuthenticated={handleAuthenticated} />;
+
+  // Admin only sees admin portal
+  const isAdmin = currentEmployeeId === "admin";
 
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden", background: "var(--c-bg)" }}>
       <Sidebar />
       <main style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-        {portal === "admin" && <AdminPortal />}
-        {portal === "account" && <AccountPortal />}
-        {portal === "timesheet" && <TimesheetPortal />}
+        {portal === "admin" && isAdmin && <AdminPortal />}
+        {portal === "account" && !isAdmin && <AccountPortal />}
+        {portal === "timesheet" && !isAdmin && <TimesheetPortal />}
+        {portal !== "admin" && isAdmin && <AdminPortal />}
       </main>
       <Toast />
     </div>
