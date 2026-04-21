@@ -1006,7 +1006,7 @@ export const useStore = create<AppState>()(
         }
 
         // Leaves
-        if (data.leaves?.length) {
+        if (Array.isArray(data.leaves)) {
           const leaves: LeaveRequest[] = data.leaves
             .filter((r: any) => r.id && r.employeeId)
             .map((r: any) => ({
@@ -1017,7 +1017,7 @@ export const useStore = create<AppState>()(
               note: String(r.note || ""),
               appliedAt: Number(r.appliedAt_UTC) || Date.now(),
             }));
-          if (leaves.length) set({ leaves });
+          set({ leaves });
         }
 
         // Queries
@@ -1081,7 +1081,7 @@ export const useStore = create<AppState>()(
         }
 
         // Timesheets
-        if (data.timesheets?.length) {
+        if (Array.isArray(data.timesheets)) {
           const entryMap: Record<string, TimesheetEntry[]> = {};
 
           if (data.timesheetEntries?.length) {
@@ -1135,7 +1135,7 @@ export const useStore = create<AppState>()(
                 : undefined,
             }));
 
-          if (timesheets.length) set({ timesheets });
+          set({ timesheets });
         }
 
         // Notifications
