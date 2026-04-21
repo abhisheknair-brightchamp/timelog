@@ -839,5 +839,32 @@ export const useStore = create<AppState>()(
     portal: state.portal,
 
   }),}
+    if (data.notifications?.length) {
+
+  const notifications: EmployeeNotification[] = data.notifications
+
+    .filter((r: any) => r.id && r.employeeId)
+
+    .map((r: any) => ({
+
+      id: String(r.id),
+
+      employeeId: String(r.employeeId),
+
+      type: r.type,
+
+      message: String(r.message || ""),
+
+      createdAt: Number(r.createdAt_UTC) || Date.now(),
+
+      read: r.read === "TRUE" || r.read === true,
+
+      timesheetDate: r.timesheetDate ? String(r.timesheetDate) : undefined,
+
+    }));
+
+  set({ notifications });
+
+}
   )
 );
