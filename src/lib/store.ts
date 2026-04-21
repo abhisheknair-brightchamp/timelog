@@ -143,9 +143,11 @@ function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-function sheetsPost(url: string, action: string, data: any) {
-  if (!url) return;
-  fetch(url, {
+const SHEETS_URL = process.env.NEXT_PUBLIC_SHEETS_URL || "";
+
+function sheetsPost(_url: string, action: string, data: any) {
+  if (!SHEETS_URL) return;
+  fetch(SHEETS_URL, {
     method: "POST",
     mode: "no-cors",
     body: JSON.stringify({ action, data }),
