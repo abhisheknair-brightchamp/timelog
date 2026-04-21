@@ -147,7 +147,7 @@ function sheetsPost(url: string, action: string, data: any) {
   if (!url) return;
   fetch(url, {
     method: "POST",
-    redirect: "follow",
+    mode: "no-cors",
     body: JSON.stringify({ action, data }),
   }).catch(() => {});
 }
