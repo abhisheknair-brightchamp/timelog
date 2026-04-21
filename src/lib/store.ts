@@ -1,6 +1,7 @@
 // src/lib/store.ts
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { StoreApi } from "zustand";
 import type {
   Employee,
   Holiday,
@@ -24,14 +25,13 @@ import type {
 /*  localStorage is scoped to: origin + browser profile.               */
 /*  It will NEVER sync across Chrome ↔ Firefox ↔ Safari.               */
 /*                                                                     */
-/*  Cross-browser sync MUST go through a backend. You already built    */
-/*  that backend with Google Sheets (sheetsPost / loadFromSheets).     */
+/*  Cross-browser sync MUST go through a backend (your Sheets layer).  */
 /*                                                                     */
 /*  RECOMMENDED PATTERN:                                               */
 /*  1. On app mount, call useStore.getState().loadFromSheets(data)     */
 /*     to hydrate state from Sheets.                                   */
 /*  2. Keep sheetsPost() as your write-path for every mutation.        */
-/*  3. The persist middleware below only caches auth + portal so the    */
+/*  3. The persist middleware below only caches auth + portal so the   */
 /*     user stays logged in across reloads.                            */
 /* ------------------------------------------------------------------ */
 
@@ -112,7 +112,7 @@ interface AppState {
     role: "admin" | "employee",
     text: string
   ) => void;
-  respondQuery: (queryId: string, response: string) => void; // legacy wrapper
+  respondQuery: (queryId: string, response: string) => void;
   resolveQuery: (queryId: string) => void;
 
   // Notifications
@@ -153,18 +153,16 @@ function sheetsPost(url: string, action: string, data: any) {
 
 /* ------------------------------------------------------------------ */
 /*  SAME-BROWSER CROSS-TAB SYNC (storage event)                        */
-/*  Call this once in your root layout / App component:                */
+/*  Call once in your root layout:                                     */
 /*    useEffect(() => syncTabs(useStore), []);                         */
 /* ------------------------------------------------------------------ */
-export function syncTabs(store: typeof useStore) {
+export function syncTabs(store: StoreApi<AppState>) {
   if (typeof window === "undefined") return;
 
   const handler = (e: StorageEvent) => {
     if (e.key === "timelog-v1" && e.newValue) {
       try {
         const parsed = JSON.parse(e.newValue);
-        // Only merge auth slice so tabs share login/logout state.
-        // Data sync must come from Sheets (loadFromSheets).
         if (parsed.state) {
           store.setState({
             currentEmployeeId: parsed.state.currentEmployeeId,
@@ -455,7 +453,6 @@ export const useStore = create<AppState>()(
           (t) => t.employeeId === employeeId && t.status === "in-progress"
         ),
       startWorkday: (employeeId, date, tz) => {
-        // Allow multiple shifts per day — only block if one is already in-progress
         const active = get().timesheets.find(
           (t) => t.employeeId === employeeId && t.status === "in-progress"
         );
@@ -491,8 +488,6 @@ export const useStore = create<AppState>()(
               Math.max(0, (endedAt - ts.startedAt) / 3600000) * 100
             ) / 100
           : 0;
-        // Authoritative worked hours ALWAYS equal captured (clock-out diff),
-        // regardless of what the employee typed in the breakdown.
         const updated: Timesheet = {
           ...ts,
           entries,
@@ -796,11 +791,9 @@ export const useStore = create<AppState>()(
           actorId === "admin"
             ? "Admin"
             : get().employees.find((e) => e.id === actorId)?.name || actorId;
-        // FIX: role should reflect who is actually asking, not hardcoded "admin"
-        const actorRole = actorId === "admin" ? "admin" : "employee";
         const firstMsg: QueryMessage = {
           id: uid(),
-          role: actorRole,
+          role: actorId === "admin" ? "admin" : "employee",
           actorName,
           text: question,
           createdAt: Date.now(),
@@ -878,7 +871,6 @@ export const useStore = create<AppState>()(
           `${role === "admin" ? "Admin replied" : "Employee replied"} on query: "${text}"`
         );
         if (role === "employee") {
-          // notify admin
           get().addNotification(
             "admin",
             "query",
@@ -892,7 +884,6 @@ export const useStore = create<AppState>()(
             undefined
           );
         } else {
-          // notify employee
           get().addNotification(
             q.employeeId,
             "query",
@@ -906,7 +897,6 @@ export const useStore = create<AppState>()(
         });
       },
       respondQuery: (queryId, response) => {
-        // legacy wrapper — adds as employee message
         get().addQueryMessage(queryId, "employee", response);
       },
       resolveQuery: (queryId) => {
