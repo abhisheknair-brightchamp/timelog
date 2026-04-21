@@ -454,7 +454,7 @@ export const useStore = create<AppState>()(
         ),
       startWorkday: (employeeId, date, tz) => {
         const active = get().timesheets.find(
-          (t) => t.employeeId === employeeId && t.status === "in-progress"
+          (t) => t.employeeId === employeeId && t.status === "in-progress" && t.date === date
         );
         if (active) return active.id;
         const ts: Timesheet = {
