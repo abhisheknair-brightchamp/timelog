@@ -48,12 +48,17 @@ interface AppState {
   addHoliday: (h: Omit<Holiday, "id">) => void;
   removeHoliday: (id: string) => void;
 
-  // Timesheets
+  // Timesheets / shifts (multiple per day allowed)
   timesheets: Timesheet[];
   submitTimesheet: (ts: Omit<Timesheet, "id">) => void;
   getTimesheet: (employeeId: string, date: string) => Timesheet | undefined;
+  getShifts: (employeeId: string, date: string) => Timesheet[];
+  getActiveShift: (employeeId: string) => Timesheet | undefined;
   startWorkday: (employeeId: string, date: string, tz: string) => string;
   endWorkday: (tsId: string, entries: TimesheetEntry[]) => void;
+  rejectTimesheet: (tsId: string, reason: string) => void;
+  reverseRejection: (tsId: string) => void;
+  resetShift: (tsId: string) => void;
 
   // Leaves
   leaves: LeaveRequest[];
@@ -305,11 +310,20 @@ export const useStore = create<AppState>()(
         get().timesheets.find(
           (t) => t.employeeId === employeeId && t.date === date
         ),
-      startWorkday: (employeeId, date, tz) => {
-        const existing = get().timesheets.find(
+      getShifts: (employeeId, date) =>
+        get().timesheets.filter(
           (t) => t.employeeId === employeeId && t.date === date
+        ),
+      getActiveShift: (employeeId) =>
+        get().timesheets.find(
+          (t) => t.employeeId === employeeId && t.status === "in-progress"
+        ),
+      startWorkday: (employeeId, date, tz) => {
+        // Allow multiple shifts per day — only block if one is already in-progress
+        const active = get().timesheets.find(
+          (t) => t.employeeId === employeeId && t.status === "in-progress"
         );
-        if (existing) return existing.id;
+        if (active) return active.id;
         const ts: Timesheet = {
           id: uid(),
           employeeId,
@@ -335,15 +349,16 @@ export const useStore = create<AppState>()(
       endWorkday: (tsId, entries) => {
         const ts = get().timesheets.find((t) => t.id === tsId);
         if (!ts) return;
-        const totalHours = entries.reduce((a, r) => a + (r.hours || 0), 0);
         const endedAt = Date.now();
         const capturedHours = ts.startedAt
-          ? Math.round(((endedAt - ts.startedAt) / 3600000) * 100) / 100
+          ? Math.round(Math.max(0, (endedAt - ts.startedAt) / 3600000) * 100) / 100
           : 0;
+        // Authoritative worked hours ALWAYS equal captured (clock-out diff),
+        // regardless of what the employee typed in the breakdown.
         const updated: Timesheet = {
           ...ts,
           entries,
-          totalHours,
+          totalHours: capturedHours,
           capturedHours,
           endedAt,
           submitted: true,
@@ -354,9 +369,10 @@ export const useStore = create<AppState>()(
           timesheets: s.timesheets.map((t) => (t.id === tsId ? updated : t)),
         }));
         const emp = get().employees.find((e) => e.id === ts.employeeId);
+        const breakdownSum = entries.reduce((a, r) => a + (r.hours || 0), 0);
         const summary = entries.length
-          ? `${totalHours.toFixed(1)}h logged / ${capturedHours.toFixed(2)}h captured across ${entries.length} entr${entries.length === 1 ? "y" : "ies"}: ${entries.map((e) => `${e.vertical} (${e.hours}h)`).join(", ")}`
-          : `no work logged / ${capturedHours.toFixed(2)}h captured`;
+          ? `${capturedHours.toFixed(2)}h on the clock · breakdown ${breakdownSum.toFixed(1)}h across ${entries.length} entr${entries.length === 1 ? "y" : "ies"}: ${entries.map((e) => `${e.vertical} (${e.hours}h)`).join(", ")}`
+          : `${capturedHours.toFixed(2)}h on the clock · no breakdown entered`;
         get().addAudit(
           "timesheet",
           ts.employeeId,
@@ -364,6 +380,77 @@ export const useStore = create<AppState>()(
           `Clocked out for ${ts.date} — ${summary}`
         );
         sheetsPost(get().config.sheetsUrl, "submitTimesheet", updated);
+      },
+      rejectTimesheet: (tsId, reason) => {
+        const ts = get().timesheets.find((t) => t.id === tsId);
+        if (!ts) return;
+        const actorId = get().currentEmployeeId;
+        const actorName = actorId === "admin"
+          ? "Admin"
+          : (get().employees.find((e) => e.id === actorId)?.name || actorId);
+        const updated: Timesheet = {
+          ...ts,
+          status: "rejected",
+          rejectedAt: Date.now(),
+          rejectedBy: actorId,
+          rejectedByName: actorName,
+          rejectionReason: reason,
+        };
+        set((s) => ({
+          timesheets: s.timesheets.map((t) => (t.id === tsId ? updated : t)),
+        }));
+        const emp = get().employees.find((e) => e.id === ts.employeeId);
+        get().addAudit(
+          "timesheet",
+          actorId,
+          emp?.name || ts.employeeId,
+          `Rejected shift for ${ts.date}${reason ? ` — ${reason}` : ""}`
+        );
+        sheetsPost(get().config.sheetsUrl, "rejectTimesheet", {
+          id: tsId,
+          reason,
+          rejectedBy: actorId,
+          rejectedByName: actorName,
+          rejectedAt: updated.rejectedAt,
+        });
+      },
+      reverseRejection: (tsId) => {
+        const ts = get().timesheets.find((t) => t.id === tsId);
+        if (!ts || ts.status !== "rejected") return;
+        const updated: Timesheet = {
+          ...ts,
+          status: "submitted",
+          rejectedAt: undefined,
+          rejectedBy: undefined,
+          rejectedByName: undefined,
+          rejectionReason: undefined,
+        };
+        set((s) => ({
+          timesheets: s.timesheets.map((t) => (t.id === tsId ? updated : t)),
+        }));
+        const actorId = get().currentEmployeeId;
+        const emp = get().employees.find((e) => e.id === ts.employeeId);
+        get().addAudit(
+          "timesheet",
+          actorId,
+          emp?.name || ts.employeeId,
+          `Reversed rejection on shift for ${ts.date}`
+        );
+        sheetsPost(get().config.sheetsUrl, "reverseRejection", { id: tsId });
+      },
+      resetShift: (tsId) => {
+        const ts = get().timesheets.find((t) => t.id === tsId);
+        if (!ts) return;
+        set((s) => ({ timesheets: s.timesheets.filter((t) => t.id !== tsId) }));
+        const actorId = get().currentEmployeeId;
+        const emp = get().employees.find((e) => e.id === ts.employeeId);
+        get().addAudit(
+          "timesheet",
+          actorId,
+          emp?.name || ts.employeeId,
+          `Reset shift for ${ts.date}${ts.startedAt ? ` (started ${new Date(ts.startedAt).toISOString()})` : ""}`
+        );
+        sheetsPost(get().config.sheetsUrl, "resetShift", { id: tsId });
       },
 
       leaves: [],

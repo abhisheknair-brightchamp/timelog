@@ -1,13 +1,13 @@
 "use client";
 // src/components/timesheet/TimesheetPortal.tsx
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useStore } from "@/lib/store";
 import {
   PageShell, SectionLabel, Card, Button, InfoBanner,
-  Chip, Avatar, showToast, Toast,
+  Chip, showToast, Toast,
 } from "@/components/ui";
 import {
-  getDayStatus, todayInTz, TIMEZONES, fmtIST, empColor, initials,
+  getDayStatus, TIMEZONES, fmtIST, getShiftHours, sumShiftHours,
 } from "@/lib/utils";
 import type { DayStatus, TimesheetEntry, LeaveType, Timesheet } from "@/types";
 
@@ -37,10 +37,11 @@ export default function TimesheetPortal() {
 }
 
 function fmtElapsed(ms: number): string {
-  const totalMin = Math.floor(ms / 60000);
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  return `${h}h ${m.toString().padStart(2, "0")}m`;
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  return `${h}h ${m.toString().padStart(2, "0")}m ${s.toString().padStart(2, "0")}s`;
 }
 
 function fmtClock(utcMs: number, iana: string): string {
@@ -52,12 +53,12 @@ function fmtClock(utcMs: number, iana: string): string {
   });
 }
 
-// ─── Log Today (Punch in/out) ─────────────────────────────────────────────────
+// ─── Log Today — multi-shift punch in/out ────────────────────────────────────
 function LogToday() {
-  const { employees, holidays, timesheets, leaves, config, getTimesheet, getLeave, applyLeave, startWorkday, endWorkday, currentEmployeeId } = useStore((s) => ({
+  const { employees, holidays, timesheets, leaves, config, getShifts, getLeave, applyLeave, startWorkday, endWorkday, currentEmployeeId } = useStore((s) => ({
     employees: s.employees, holidays: s.holidays,
     timesheets: s.timesheets, leaves: s.leaves, config: s.config,
-    getTimesheet: s.getTimesheet, getLeave: s.getLeave, applyLeave: s.applyLeave,
+    getShifts: s.getShifts, getLeave: s.getLeave, applyLeave: s.applyLeave,
     startWorkday: s.startWorkday, endWorkday: s.endWorkday,
     currentEmployeeId: s.currentEmployeeId,
   }));
@@ -67,24 +68,29 @@ function LogToday() {
   const todayLocal = new Date().toLocaleDateString("en-CA", { timeZone: emp.timezone });
 
   const status: DayStatus = getDayStatus(emp, todayLocal, holidays, timesheets, todayLocal, leaves);
-  const ts = getTimesheet(currentEmployeeId, todayLocal);
-  const inProgress = !!ts && ts.status === "in-progress";
-  const submitted = ts?.submitted ?? false;
+  const todayShifts = getShifts(currentEmployeeId, todayLocal).slice().sort((a, b) => (a.startedAt || 0) - (b.startedAt || 0));
+  const activeShift = todayShifts.find((t) => t.status === "in-progress");
+  const completedShifts = todayShifts.filter((t) => t.status !== "in-progress");
   const leave = getLeave(currentEmployeeId, todayLocal);
   const holiday = holidays.find((h) => h.date === todayLocal);
 
-  // Live clock — updates once a second while clocked in
+  // Live clock — updates while on the clock
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
-    if (!inProgress) return;
+    if (!activeShift) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, [inProgress]);
+  }, [activeShift]);
 
-  // Entry form state for clock-out breakdown
+  // Entry form state for the in-progress shift's breakdown (reset whenever a new shift starts)
   const [rows, setRows] = useState<TimesheetEntry[]>([
     { vertical: config.verticals[0] || "", note: "", hours: 0 },
   ]);
+  useEffect(() => {
+    // Reset the breakdown when we move into a brand new active shift
+    setRows([{ vertical: config.verticals[0] || "", note: "", hours: 0 }]);
+  }, [activeShift?.id, config.verticals]);
+
   const [showLeaveForm, setShowLeaveForm] = useState(false);
   const [leaveType, setLeaveType] = useState<LeaveType>("sick");
   const [leaveNote, setLeaveNote] = useState("");
@@ -97,27 +103,20 @@ function LogToday() {
 
   function onClockIn() {
     startWorkday(currentEmployeeId, todayLocal, emp.timezone);
-    showToast("Clocked in — have a productive day");
+    showToast("Clocked in — have a productive session");
   }
 
   function onClockOut() {
-    if (!ts) return;
-    // Drop empty rows, but any partially-filled row must be fully valid.
-    const filled = rows.filter((r) => r.vertical || r.hours > 0 || r.note);
+    if (!activeShift) return;
+    // Only rows with hours entered count as real entries — pre-filled dropdowns alone don't.
+    const filled = rows.filter((r) => (r.hours || 0) > 0);
     for (const row of filled) {
-      if (!row.vertical) { showToast("Vertical is required for all filled entries"); return; }
-      if (!row.hours || row.hours <= 0) { showToast("Hours required for all filled entries"); return; }
+      if (!row.vertical) { showToast("Vertical is required for filled entries"); return; }
     }
-    const total = filled.reduce((a, r) => a + (r.hours || 0), 0);
-    const capturedMs = ts.startedAt ? Date.now() - ts.startedAt : 0;
+    const capturedMs = activeShift.startedAt ? Date.now() - activeShift.startedAt : 0;
     const capturedHrs = capturedMs / 3600000;
-    endWorkday(ts.id, filled);
-    const belowMin = total < emp.minHoursPerDay;
-    showToast(
-      belowMin
-        ? `Clocked out — ${total.toFixed(1)}h logged / ${capturedHrs.toFixed(2)}h captured (below ${emp.minHoursPerDay}h min)`
-        : `Clocked out — ${total.toFixed(1)}h logged / ${capturedHrs.toFixed(2)}h captured`
-    );
+    endWorkday(activeShift.id, filled);
+    showToast(`Clocked out — ${capturedHrs.toFixed(2)}h captured`);
   }
 
   function submitLeave() {
@@ -127,13 +126,12 @@ function LogToday() {
   }
 
   const dayLabel = new Date(todayLocal + "T00:00:00").toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-  const elapsedMs = ts?.startedAt ? now - ts.startedAt : 0;
-  const suggestedHours = Math.max(0.5, Math.round(elapsedMs / 3600000 * 2) / 2); // nearest 0.5h
+  const elapsedMs = activeShift?.startedAt ? now - activeShift.startedAt : 0;
+  const totalToday = sumShiftHours(todayShifts);
 
   return (
     <PageShell title="Log today" subtitle={`${emp.name} · ${tz.short} · ${dayLabel}`}>
 
-      {/* Status banner */}
       {status === "weekoff" && (
         <div style={{ background: "#F1EFE8", borderRadius: "var(--r-lg)", padding: "24px", textAlign: "center", marginBottom: 16 }}>
           <div style={{ fontSize: 32, marginBottom: 8 }}>🏖</div>
@@ -160,35 +158,27 @@ function LogToday() {
         </div>
       )}
 
-      {/* Punch flow — working day, no leave */}
       {status !== "weekoff" && status !== "holiday" && status !== "leave" && (
         <>
-          {/* Not started yet */}
-          {!ts && (
-            <Card highlight>
-              <div style={{ textAlign: "center", padding: "20px 0" }}>
-                <div style={{ fontSize: 13, color: "var(--c-text-2)", marginBottom: 6 }}>Ready to start your day?</div>
-                <div style={{ fontSize: 22, fontWeight: 500, marginBottom: 16 }}>Clock in to begin</div>
-                <Button variant="primary" onClick={onClockIn}>▶ Clock in</Button>
-                <div style={{ marginTop: 16, fontSize: 11, color: "var(--c-text-3)" }}>
-                  Or{" "}
-                  <button onClick={() => setShowLeaveForm(true)} style={{ background: "none", border: "none", color: "var(--c-brand-dark)", cursor: "pointer", fontSize: 11, padding: 0, textDecoration: "underline", fontFamily: "inherit" }}>
-                    apply leave for today
-                  </button>
-                </div>
-              </div>
-            </Card>
+          {/* Summary banner */}
+          {todayShifts.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--c-bg)", padding: "10px 14px", borderRadius: "var(--r-md)", marginBottom: 14, fontSize: 12 }}>
+              <span style={{ color: "var(--c-text-2)" }}>
+                {todayShifts.length} shift{todayShifts.length === 1 ? "" : "s"} today · target {emp.minHoursPerDay}h
+              </span>
+              <span style={{ fontWeight: 500, color: "var(--c-brand-dark)" }}>{totalToday.toFixed(2)}h captured</span>
+            </div>
           )}
 
-          {/* In progress — live timer + clock-out form */}
-          {ts && inProgress && (
+          {/* Active shift — timer + clock-out form */}
+          {activeShift && (
             <>
               <Card highlight>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                   <div>
                     <div style={{ fontSize: 11, color: "var(--c-text-3)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>On the clock</div>
                     <div style={{ fontSize: 13, color: "var(--c-text-2)" }}>
-                      Clocked in at <strong>{ts.startedAt ? fmtClock(ts.startedAt, emp.timezone) : ""}</strong>
+                      Started at <strong>{activeShift.startedAt ? fmtClock(activeShift.startedAt, emp.timezone) : ""}</strong>
                     </div>
                   </div>
                   <div style={{ textAlign: "right" }}>
@@ -201,12 +191,12 @@ function LogToday() {
               </Card>
 
               <InfoBanner>
-                Fill in what you worked on. You can clock out anytime — captured time ({suggestedHours.toFixed(1)}h so far) is always saved separately from the breakdown you enter. Target is <strong>{emp.minHoursPerDay}h</strong>.
+                Breakdown below is just for context — hours logged are the actual elapsed time between clock-in and clock-out. You can clock out any time and start another shift later.
               </InfoBanner>
 
               <Card>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 80px 32px", gap: 8, marginBottom: 8 }}>
-                  {["Vertical *", "What did you work on?", "Hours *", ""].map((h, i) => (
+                  {["Vertical", "What did you work on?", "Hours", ""].map((h, i) => (
                     <span key={i} style={{ fontSize: 10, fontWeight: 500, color: "var(--c-text-3)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</span>
                   ))}
                 </div>
@@ -217,7 +207,7 @@ function LogToday() {
                       {config.verticals.map((v) => <option key={v}>{v}</option>)}
                     </select>
                     <input type="text" value={row.note} placeholder="Brief description…" onChange={(e) => updateRow(ri, { note: e.target.value })} />
-                    <input type="number" value={row.hours || ""} placeholder="0" min={0.5} max={14} step={0.5} onChange={(e) => updateRow(ri, { hours: parseFloat(e.target.value) || 0 })} />
+                    <input type="number" value={row.hours || ""} placeholder="0" min={0.25} max={14} step={0.25} onChange={(e) => updateRow(ri, { hours: parseFloat(e.target.value) || 0 })} />
                     {rows.length > 1
                       ? <button onClick={() => removeRow(ri)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "var(--c-text-3)", padding: 0, lineHeight: 1 }}>×</button>
                       : <span />}
@@ -225,52 +215,46 @@ function LogToday() {
                 ))}
 
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 12, borderTop: "0.5px solid var(--c-border)", marginTop: 4 }}>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <Button size="xs" onClick={addRow}>+ Add row</Button>
-                    <span style={{ fontSize: 11, color: "var(--c-text-3)" }}>Target {emp.minHoursPerDay}h · partial is OK</span>
-                  </div>
-                  <Button variant="primary" size="sm" onClick={onClockOut}>■ Clock out &amp; submit</Button>
+                  <Button size="xs" onClick={addRow}>+ Add row</Button>
+                  <Button variant="primary" size="sm" onClick={onClockOut}>■ Clock out</Button>
                 </div>
               </Card>
             </>
           )}
 
-          {/* Already submitted for today */}
-          {ts && submitted && (
-            <Card>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                <div style={{ fontSize: 13, fontWeight: 500 }}>Today's timesheet</div>
-                <Chip label="✓ Submitted" variant="green" />
-              </div>
-              {ts.entries.map((en, ri) => (
-                <div key={ri} style={{ display: "grid", gridTemplateColumns: "1fr 2fr 80px", gap: 8, marginBottom: 8, alignItems: "center" }}>
-                  <Chip label={en.vertical} variant="purple" />
-                  <span style={{ fontSize: 12, color: "var(--c-text-2)" }}>{en.note || "—"}</span>
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>{en.hours.toFixed(1)}h</span>
+          {/* Clock-in CTA when no active shift */}
+          {!activeShift && (
+            <Card highlight>
+              <div style={{ textAlign: "center", padding: "20px 0" }}>
+                <div style={{ fontSize: 13, color: "var(--c-text-2)", marginBottom: 6 }}>
+                  {todayShifts.length === 0 ? "Ready to start your day?" : "Start another shift?"}
                 </div>
-              ))}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 12, borderTop: "0.5px solid var(--c-border)", marginTop: 4 }}>
-                <div style={{ fontSize: 12, color: "var(--c-text-3)" }}>
-                  {ts.startedAt && ts.endedAt
-                    ? `${fmtClock(ts.startedAt, emp.timezone)} → ${fmtClock(ts.endedAt, emp.timezone)}`
-                    : ts.submittedAt ? `Submitted ${fmtIST(ts.submittedAt)}` : ""}
+                <div style={{ fontSize: 22, fontWeight: 500, marginBottom: 16 }}>
+                  {todayShifts.length === 0 ? "Clock in to begin" : "You're off the clock"}
                 </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: "var(--c-brand-dark)" }}>
-                    {ts.totalHours.toFixed(1)}h logged
+                <Button variant="primary" onClick={onClockIn}>▶ Clock in</Button>
+                {todayShifts.length === 0 && (
+                  <div style={{ marginTop: 16, fontSize: 11, color: "var(--c-text-3)" }}>
+                    Or{" "}
+                    <button onClick={() => setShowLeaveForm(true)} style={{ background: "none", border: "none", color: "var(--c-brand-dark)", cursor: "pointer", fontSize: 11, padding: 0, textDecoration: "underline", fontFamily: "inherit" }}>
+                      apply leave for today
+                    </button>
                   </div>
-                  {typeof ts.capturedHours === "number" && (
-                    <div style={{ fontSize: 11, color: "var(--c-text-3)", marginTop: 2 }}>
-                      {ts.capturedHours.toFixed(2)}h on the clock
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
             </Card>
           )}
 
+          {/* Today's completed shifts */}
+          {completedShifts.length > 0 && (
+            <>
+              <SectionLabel>Completed shifts today</SectionLabel>
+              {completedShifts.map((s) => <ShiftCard key={s.id} ts={s} tz={emp.timezone} />)}
+            </>
+          )}
+
           {/* Leave application form */}
-          {showLeaveForm && !submitted && (
+          {showLeaveForm && !activeShift && todayShifts.length === 0 && (
             <Card>
               <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 12 }}>Apply leave for today</div>
               <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
@@ -302,7 +286,49 @@ function LogToday() {
   );
 }
 
-// ─── My History (with queries) ────────────────────────────────────────────────
+function ShiftCard({ ts, tz }: { ts: Timesheet; tz: string }) {
+  const hrs = getShiftHours(ts);
+  const rejected = ts.status === "rejected";
+  return (
+    <div style={{
+      border: `0.5px solid ${rejected ? "#F09595" : "var(--c-border)"}`,
+      borderRadius: "var(--r-lg)", padding: 14, marginBottom: 8,
+      background: rejected ? "#FEF6F6" : "#fff",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <span style={{ fontSize: 12, color: "var(--c-text-2)" }}>
+          {ts.startedAt ? fmtClock(ts.startedAt, tz) : "—"} → {ts.endedAt ? fmtClock(ts.endedAt, tz) : "—"}
+        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 13, fontWeight: 500, color: rejected ? "#A32D2D" : "var(--c-brand-dark)" }}>
+            {hrs.toFixed(2)}h
+          </span>
+          {rejected
+            ? <Chip label="Rejected" variant="red" />
+            : <Chip label="Submitted" variant="green" />}
+        </div>
+      </div>
+      {rejected && ts.rejectionReason && (
+        <div style={{ fontSize: 11, color: "#A32D2D", marginBottom: 8, paddingLeft: 8, borderLeft: "2px solid #A32D2D" }}>
+          <strong>Rejected:</strong> {ts.rejectionReason}
+          {ts.rejectedByName && <span style={{ opacity: 0.7 }}> · {ts.rejectedByName}</span>}
+        </div>
+      )}
+      {ts.entries.length === 0 && (
+        <div style={{ fontSize: 11, color: "var(--c-text-3)" }}>No breakdown logged</div>
+      )}
+      {ts.entries.map((en, i) => (
+        <div key={i} style={{ display: "flex", gap: 8, padding: "4px 0", alignItems: "center" }}>
+          <Chip label={en.vertical} variant="purple" tiny />
+          <span style={{ flex: 1, fontSize: 12, color: "var(--c-text-2)" }}>{en.note || "—"}</span>
+          <span style={{ fontSize: 11, color: "var(--c-text-3)" }}>{en.hours.toFixed(2)}h</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── My History — shifts grouped by date + admin queries ──────────────────────
 function MyHistory() {
   const { employees, holidays, timesheets, leaves, queries, currentEmployeeId, respondQuery } = useStore((s) => ({
     employees: s.employees, holidays: s.holidays,
@@ -313,7 +339,14 @@ function MyHistory() {
 
   const emp = employees.find((e) => e.id === currentEmployeeId)!;
   const todayLocal = new Date().toLocaleDateString("en-CA", { timeZone: emp.timezone });
-  const empTimesheets = timesheets.filter((t) => t.employeeId === currentEmployeeId && t.submitted).sort((a, b) => b.date.localeCompare(a.date));
+
+  // Group my completed shifts by date
+  const myShifts = timesheets.filter((t) => t.employeeId === currentEmployeeId && (t.status === "submitted" || t.status === "rejected"));
+  const shiftsByDate: Record<string, Timesheet[]> = {};
+  myShifts.forEach((t) => {
+    (shiftsByDate[t.date] = shiftsByDate[t.date] || []).push(t);
+  });
+  const datesDesc = Object.keys(shiftsByDate).sort((a, b) => b.localeCompare(a));
 
   const now = new Date();
   const yr = now.getFullYear(), mo = now.getMonth();
@@ -333,7 +366,9 @@ function MyHistory() {
     "in-progress": { bg: "#EEEDFE", color: "#3C3489" },
   };
 
-  const totalHours = empTimesheets.reduce((a, t) => a + t.totalHours, 0);
+  const acceptedShifts = myShifts.filter((t) => t.status !== "rejected");
+  const totalHours = sumShiftHours(acceptedShifts);
+
   const myQueries = queries.filter((q) => q.employeeId === currentEmployeeId);
   const openQueries = myQueries.filter((q) => q.status === "open" && !q.response);
 
@@ -349,7 +384,7 @@ function MyHistory() {
   }
 
   return (
-    <PageShell title="My history" subtitle="Monthly overview and submitted timesheets">
+    <PageShell title="My history" subtitle="Monthly overview, submitted shifts, and admin queries">
 
       {openQueries.length > 0 && (
         <>
@@ -381,11 +416,11 @@ function MyHistory() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 20, marginTop: openQueries.length > 0 ? 20 : 0 }}>
         <div style={{ background: "var(--c-bg)", borderRadius: "var(--r-md)", padding: "12px 14px" }}>
           <div style={{ fontSize: 20, fontWeight: 500, color: "var(--c-brand-dark)" }}>{totalHours.toFixed(1)}h</div>
-          <div style={{ fontSize: 11, color: "var(--c-text-2)", marginTop: 2 }}>Total hours this month</div>
+          <div style={{ fontSize: 11, color: "var(--c-text-2)", marginTop: 2 }}>Total hours (accepted)</div>
         </div>
         <div style={{ background: "var(--c-bg)", borderRadius: "var(--r-md)", padding: "12px 14px" }}>
-          <div style={{ fontSize: 20, fontWeight: 500 }}>{empTimesheets.length}</div>
-          <div style={{ fontSize: 11, color: "var(--c-text-2)", marginTop: 2 }}>Days submitted</div>
+          <div style={{ fontSize: 20, fontWeight: 500 }}>{datesDesc.length}</div>
+          <div style={{ fontSize: 11, color: "var(--c-text-2)", marginTop: 2 }}>Days with shifts</div>
         </div>
         <div style={{ background: "var(--c-bg)", borderRadius: "var(--r-md)", padding: "12px 14px" }}>
           <div style={{ fontSize: 20, fontWeight: 500 }}>{leaves.filter((l) => l.employeeId === currentEmployeeId).length}</div>
@@ -427,36 +462,33 @@ function MyHistory() {
         </div>
       </Card>
 
-      {empTimesheets.length > 0 && (
+      {datesDesc.length > 0 && (
         <>
-          <SectionLabel>Submitted timesheets</SectionLabel>
-          {empTimesheets.map((ts) => {
-            const dl = new Date(ts.date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
-            const tsQueries = myQueries.filter((q) => q.timesheetId === ts.id);
+          <SectionLabel>Submitted shifts</SectionLabel>
+          {datesDesc.map((date) => {
+            const shifts = shiftsByDate[date].slice().sort((a, b) => (a.startedAt || 0) - (b.startedAt || 0));
+            const acceptedH = sumShiftHours(shifts.filter((t) => t.status !== "rejected"));
+            const rejected = shifts.filter((t) => t.status === "rejected");
+            const dl = new Date(date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
+            const dateQueries = myQueries.filter((q) => shifts.some((t) => t.id === q.timesheetId));
             return (
-              <div key={ts.id} style={{ border: "0.5px solid var(--c-border)", borderRadius: "var(--r-lg)", padding: 14, marginBottom: 8, background: "#fff" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>{dl}</span>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--c-brand-dark)" }}>{ts.totalHours.toFixed(1)}h logged</span>
-                    {typeof ts.capturedHours === "number" && (
-                      <span style={{ fontSize: 11, color: "var(--c-text-3)" }}>· {ts.capturedHours.toFixed(2)}h captured</span>
-                    )}
-                    {tsQueries.length > 0 && <Chip label={`${tsQueries.length} query${tsQueries.length === 1 ? "" : "ies"}`} variant="amber" />}
-                    <Chip label="Submitted" variant="green" />
-                  </div>
+              <div key={date} style={{ marginBottom: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <span style={{ fontSize: 12, fontWeight: 500 }}>{dl}</span>
+                  <span style={{ fontSize: 11, color: "var(--c-text-3)" }}>
+                    · {shifts.length} shift{shifts.length === 1 ? "" : "s"}
+                  </span>
+                  <span style={{ fontSize: 12, fontWeight: 500, color: "var(--c-brand-dark)" }}>
+                    {acceptedH.toFixed(2)}h
+                  </span>
+                  {rejected.length > 0 && <Chip label={`${rejected.length} rejected`} variant="red" tiny />}
+                  {dateQueries.length > 0 && <Chip label={`${dateQueries.length} query${dateQueries.length === 1 ? "" : "ies"}`} variant="amber" tiny />}
                 </div>
-                {ts.entries.map((en, i) => (
-                  <div key={i} style={{ display: "flex", gap: 8, padding: "6px 0", borderTop: "0.5px solid var(--c-border)", alignItems: "center" }}>
-                    <Chip label={en.vertical} variant="purple" />
-                    <span style={{ flex: 1, fontSize: 12, color: "var(--c-text-2)" }}>{en.note || "—"}</span>
-                    <span style={{ fontSize: 12, fontWeight: 500 }}>{en.hours.toFixed(1)}h</span>
-                  </div>
-                ))}
-                {tsQueries.length > 0 && (
-                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: "0.5px solid var(--c-border)" }}>
-                    {tsQueries.map((q) => (
-                      <div key={q.id} style={{ padding: "8px 0", fontSize: 12 }}>
+                {shifts.map((s) => <ShiftCard key={s.id} ts={s} tz={emp.timezone} />)}
+                {dateQueries.length > 0 && (
+                  <div style={{ marginTop: 6, background: "var(--c-bg)", borderRadius: "var(--r-md)", padding: 10 }}>
+                    {dateQueries.map((q) => (
+                      <div key={q.id} style={{ padding: "6px 0", fontSize: 12 }}>
                         <div style={{ color: "var(--c-text-3)", marginBottom: 4 }}>
                           <strong>{q.byActorName}:</strong> {q.question}
                         </div>
@@ -470,7 +502,6 @@ function MyHistory() {
                     ))}
                   </div>
                 )}
-                {ts.submittedAt && <div style={{ fontSize: 10, color: "var(--c-text-3)", marginTop: 8 }}>Submitted {fmtIST(ts.submittedAt)}</div>}
               </div>
             );
           })}
@@ -480,7 +511,7 @@ function MyHistory() {
   );
 }
 
-// ─── My Leaves (unchanged logic) ──────────────────────────────────────────────
+// ─── My Leaves (unchanged) ────────────────────────────────────────────────────
 function MyLeaves() {
   const { employees, leaves, applyLeave, cancelLeave, holidays, timesheets, currentEmployeeId } = useStore((s) => ({
     employees: s.employees, leaves: s.leaves,

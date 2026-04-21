@@ -28,7 +28,7 @@ function setupSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const defs = {
     [SHEETS.EMPLOYEES]: ["id","name","email","role","verticals","timezone","weekoffs","minHoursPerDay","active","createdAt_UTC","createdAt_IST"],
-    [SHEETS.TIMESHEETS]: ["id","employeeId","employeeName","date","totalHours","submitted","submittedAt_UTC","submittedAt_IST","submittedFromTz","entryCount","startedAt_UTC","endedAt_UTC","status","capturedHours"],
+    [SHEETS.TIMESHEETS]: ["id","employeeId","employeeName","date","totalHours","submitted","submittedAt_UTC","submittedAt_IST","submittedFromTz","entryCount","startedAt_UTC","endedAt_UTC","status","capturedHours","rejectedAt_UTC","rejectedBy","rejectedByName","rejectionReason"],
     [SHEETS.TIMESHEET_ENTRIES]: ["timesheetId","employeeId","date","vertical","note","hours"],
     [SHEETS.AUDIT]: ["id","timestamp_UTC","timestamp_IST","type","actorId","actorName","subject","action","diffJSON"],
     [SHEETS.CONFIG]: ["key","value","updatedAt_IST"],
@@ -113,6 +113,10 @@ function doPost(e) {
       createQuery:      handleCreateQuery,
       respondQuery:     handleRespondQuery,
       resolveQuery:     handleResolveQuery,
+      // Shift moderation
+      rejectTimesheet:  handleRejectTimesheet,
+      reverseRejection: handleReverseRejection,
+      resetShift:       handleResetShift,
     };
     if (!handlers[action]) return jsonResponse({ ok: false, error: "Unknown action: " + action });
     const result = handlers[action](data);
@@ -274,9 +278,10 @@ function handleSubmitTimesheet(ts) {
   const entrySheet = getSheet(SHEETS.TIMESHEET_ENTRIES);
   const tsId = ts.id || uid();
   const rows = sheet.getDataRange().getValues();
+  // Upsert by shift id (multiple shifts per employee/day now allowed)
   let rowIdx = -1;
   for (let i = 1; i < rows.length; i++) {
-    if (rows[i][1] === ts.employeeId && rows[i][3] === ts.date) { rowIdx = i + 1; break; }
+    if (rows[i][0] === tsId) { rowIdx = i + 1; break; }
   }
   const tsRow = [
     tsId, ts.employeeId, ts.employeeName || "", ts.date, ts.totalHours || 0,
@@ -285,6 +290,7 @@ function handleSubmitTimesheet(ts) {
     ts.submittedFromTz || "", (ts.entries || []).length,
     ts.startedAt || "", ts.endedAt || "", ts.status || (ts.submitted ? "submitted" : "in-progress"),
     (typeof ts.capturedHours === "number") ? ts.capturedHours : "",
+    ts.rejectedAt || "", ts.rejectedBy || "", ts.rejectedByName || "", ts.rejectionReason || "",
   ];
   if (rowIdx > 0) {
     sheet.getRange(rowIdx, 1, 1, tsRow.length).setValues([tsRow]);
@@ -300,6 +306,56 @@ function handleSubmitTimesheet(ts) {
     entrySheet.appendRow([tsId, ts.employeeId, ts.date, en.vertical, en.note || "", en.hours]);
   });
   return { timesheetId: tsId };
+}
+
+function handleRejectTimesheet(data) {
+  const sheet = getSheet(SHEETS.TIMESHEETS);
+  const rows = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][0] === data.id) {
+      sheet.getRange(i + 1, 13).setValue("rejected"); // status col
+      sheet.getRange(i + 1, 15).setValue(data.rejectedAt || Date.now()); // rejectedAt_UTC
+      sheet.getRange(i + 1, 16).setValue(data.rejectedBy || "");
+      sheet.getRange(i + 1, 17).setValue(data.rejectedByName || "");
+      sheet.getRange(i + 1, 18).setValue(data.reason || "");
+      return { ok: true };
+    }
+  }
+  return { ok: false, error: "Shift not found" };
+}
+
+function handleReverseRejection(data) {
+  const sheet = getSheet(SHEETS.TIMESHEETS);
+  const rows = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][0] === data.id) {
+      sheet.getRange(i + 1, 13).setValue("submitted");
+      sheet.getRange(i + 1, 15).setValue("");
+      sheet.getRange(i + 1, 16).setValue("");
+      sheet.getRange(i + 1, 17).setValue("");
+      sheet.getRange(i + 1, 18).setValue("");
+      return { ok: true };
+    }
+  }
+  return { ok: false, error: "Shift not found" };
+}
+
+function handleResetShift(data) {
+  const sheet = getSheet(SHEETS.TIMESHEETS);
+  const entrySheet = getSheet(SHEETS.TIMESHEET_ENTRIES);
+  const rows = sheet.getDataRange().getValues();
+  for (let i = rows.length - 1; i > 0; i--) {
+    if (rows[i][0] === data.id) {
+      sheet.deleteRow(i + 1);
+      // Remove entries too
+      const erows = entrySheet.getDataRange().getValues();
+      for (let j = erows.length - 1; j > 0; j--) {
+        if (erows[j][0] === data.id) entrySheet.deleteRow(j + 1);
+      }
+      return { ok: true };
+    }
+  }
+  return { ok: false, error: "Shift not found" };
 }
 
 function handleAddAudit(entry) {

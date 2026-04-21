@@ -119,13 +119,26 @@ export function getDayStatus(
   if (employee.weekoffs.includes(dow)) return "weekoff";
   if (holidays.some((h) => h.date === date)) return "holiday";
   if (leaves?.some((l) => l.employeeId === employee.id && l.date === date)) return "leave";
-  const ts = timesheets.find(
+  const sameDayShifts = timesheets.filter(
     (t) => t.employeeId === employee.id && t.date === date
   );
-  if (ts?.submitted) return "logged";
+  if (sameDayShifts.some((t) => t.status === "in-progress")) return "in-progress";
+  if (sameDayShifts.some((t) => t.submitted && t.status !== "rejected")) return "logged";
   if (date < todayStr) return "missing";
   if (date === todayStr) return "upcoming";
   return "future";
+}
+
+/** Authoritative worked hours for a shift — clock-in/out diff wins over any typed breakdown. */
+export function getShiftHours(ts: Pick<Timesheet, "startedAt" | "endedAt" | "capturedHours" | "totalHours" | "status">): number {
+  if (ts.status === "rejected") return 0;
+  if (ts.startedAt && ts.endedAt) return Math.max(0, (ts.endedAt - ts.startedAt) / 3600000);
+  if (typeof ts.capturedHours === "number") return ts.capturedHours;
+  return ts.totalHours || 0;
+}
+
+export function sumShiftHours(shifts: Array<Parameters<typeof getShiftHours>[0]>): number {
+  return shifts.reduce((sum, s) => sum + getShiftHours(s), 0);
 }
 
 export const TIMEZONES = [

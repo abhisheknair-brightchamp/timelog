@@ -30,21 +30,25 @@ export interface TimesheetEntry {
   hours: number;
 }
 
-export type TimesheetStatus = "in-progress" | "submitted";
+export type TimesheetStatus = "in-progress" | "submitted" | "rejected";
 
 export interface Timesheet {
   id: string;
   employeeId: string;
   date: string; // YYYY-MM-DD in employee's local tz
   entries: TimesheetEntry[];
-  totalHours: number; // sum of entry hours (employee's breakdown)
+  totalHours: number; // authoritative — equals capturedHours once clocked out
   capturedHours?: number; // wall-clock elapsed between startedAt and endedAt
   submitted: boolean;
   submittedAt?: number; // UTC ms
   submittedFromTz: string; // IANA
   startedAt?: number; // UTC ms — when they clocked in
   endedAt?: number; // UTC ms — when they clocked out
-  status?: TimesheetStatus; // "in-progress" while clocked in
+  status?: TimesheetStatus; // "in-progress" while clocked in, "rejected" when admin rejects
+  rejectedAt?: number;
+  rejectedBy?: string;
+  rejectedByName?: string;
+  rejectionReason?: string;
 }
 
 export type AuditType = "profile" | "timesheet" | "config" | "onboard" | "query";

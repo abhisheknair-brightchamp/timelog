@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { useStore } from "@/lib/store";
 import { PageShell, Card, SectionLabel, Avatar, Chip, StatCard, InfoBanner } from "@/components/ui";
-import { tzByIana, getDayOfWeek, FIRST_USAGE_DATE } from "@/lib/utils";
+import { tzByIana, getDayOfWeek, FIRST_USAGE_DATE, getShiftHours, sumShiftHours } from "@/lib/utils";
 
 function dateRange(from: string, to: string): string[] {
   const out: string[] = [];
@@ -61,36 +61,46 @@ export default function Analytics() {
     let weekoffs = 0;
     let holidayCount = 0;
     let leaveCount = 0;
-    let loggedHours = 0;
-    let capturedHours = 0;
+    let acceptedHours = 0;
+    let rejectedShifts = 0;
+    let totalShifts = 0;
 
     rangeDates.forEach((d) => {
       const dow = getDayOfWeek(d);
       const isWeekoff = e.weekoffs.includes(dow);
       const isHoliday = holidays.some((h) => h.date === d);
       const leave = leaves.find((l) => l.employeeId === e.id && l.date === d);
-      const ts = timesheets.find((t) => t.employeeId === e.id && t.date === d && t.submitted);
+      const dayShifts = timesheets.filter((t) => t.employeeId === e.id && t.date === d && t.submitted);
+      const accepted = dayShifts.filter((t) => t.status !== "rejected");
+      const rejected = dayShifts.filter((t) => t.status === "rejected");
 
       if (isWeekoff) { weekoffs++; return; }
       if (isHoliday) { holidayCount++; return; }
       if (leave) { leaveCount++; return; }
-      if (ts) {
+      if (accepted.length > 0) {
         logged++;
-        loggedHours += ts.totalHours;
-        capturedHours += ts.capturedHours ?? ts.totalHours;
+        acceptedHours += sumShiftHours(accepted);
+        totalShifts += accepted.length;
+        rejectedShifts += rejected.length;
+        return;
+      }
+      if (rejected.length > 0) {
+        // All shifts that day were rejected — counts as missed
+        rejectedShifts += rejected.length;
+        missed++;
         return;
       }
       if (d < todayStr) missed++;
     });
 
-    return { emp: e, loggedHours, capturedHours, logged, missed, weekoffs, leaveCount, holidayCount };
+    return { emp: e, acceptedHours, logged, missed, weekoffs, leaveCount, holidayCount, rejectedShifts, totalShifts };
   }), [employees, timesheets, leaves, holidays, rangeDates, todayStr]);
 
-  const totalLoggedHours = rows.reduce((a, r) => a + r.loggedHours, 0);
-  const totalCapturedHours = rows.reduce((a, r) => a + r.capturedHours, 0);
+  const totalAcceptedHours = rows.reduce((a, r) => a + r.acceptedHours, 0);
   const totalLogged = rows.reduce((a, r) => a + r.logged, 0);
   const totalMissed = rows.reduce((a, r) => a + r.missed, 0);
-  const totalLeaves = rows.reduce((a, r) => a + r.leaveCount, 0);
+  const totalRejected = rows.reduce((a, r) => a + r.rejectedShifts, 0);
+  const totalShifts = rows.reduce((a, r) => a + r.totalShifts, 0);
 
   function setPreset(days: number) {
     const d = clampFrom(localDateStr(Date.now() - (days - 1) * 24 * 60 * 60 * 1000));
@@ -132,11 +142,12 @@ export default function Analytics() {
         </InfoBanner>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 20 }}>
-        <StatCard label="Hours logged"   value={totalLoggedHours.toFixed(1) + "h"} color="var(--c-brand-dark)" />
-        <StatCard label="Hours captured" value={totalCapturedHours.toFixed(1) + "h"} color="#3C3489" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10, marginBottom: 20 }}>
+        <StatCard label="Hours accepted" value={totalAcceptedHours.toFixed(1) + "h"} color="var(--c-brand-dark)" />
+        <StatCard label="Shifts"         value={totalShifts} />
         <StatCard label="Days logged"    value={totalLogged} />
         <StatCard label="Days missed"    value={totalMissed} color={totalMissed > 0 ? "#A32D2D" : undefined} />
+        <StatCard label="Shifts rejected" value={totalRejected} color={totalRejected > 0 ? "#A32D2D" : undefined} />
       </div>
 
       <SectionLabel mt={0}>Per employee</SectionLabel>
@@ -147,21 +158,19 @@ export default function Analytics() {
               <th style={{ width: "22%" }}>Employee</th>
               <th style={{ width: "10%" }}>Role</th>
               <th style={{ width: "6%" }}>TZ</th>
-              <th style={{ width: "14%" }}>Logged</th>
-              <th style={{ width: "12%" }}>Captured</th>
+              <th style={{ width: "14%" }}>Accepted hrs</th>
+              <th style={{ width: "8%" }}>Shifts</th>
               <th style={{ width: "8%" }}>Days</th>
               <th style={{ width: "8%" }}>Missed</th>
-              <th style={{ width: "6%" }}>Leaves</th>
-              <th style={{ width: "6%" }}>Week off</th>
+              <th style={{ width: "8%" }}>Rejected</th>
+              <th style={{ width: "8%" }}>Leaves</th>
               <th style={{ width: "8%" }}>Holidays</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r, i) => {
               const tz = tzByIana(r.emp.timezone);
-              const avgLogged = r.logged > 0 ? r.loggedHours / r.logged : 0;
-              const gap = r.capturedHours - r.loggedHours;
-              const bigGap = Math.abs(gap) >= 0.5;
+              const avg = r.logged > 0 ? r.acceptedHours / r.logged : 0;
               return (
                 <tr key={r.emp.id}>
                   <td>
@@ -176,23 +185,16 @@ export default function Analytics() {
                   <td><Chip label={r.emp.role} variant="green" tiny /></td>
                   <td style={{ fontSize: 11, color: "var(--c-text-3)" }}>{tz.short}</td>
                   <td>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--c-brand-dark)" }}>{r.loggedHours.toFixed(1)}h</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--c-brand-dark)" }}>{r.acceptedHours.toFixed(2)}h</span>
                     {r.logged > 0 && (
-                      <span style={{ fontSize: 10, color: "var(--c-text-3)", marginLeft: 6 }}>avg {avgLogged.toFixed(1)}h</span>
+                      <span style={{ fontSize: 10, color: "var(--c-text-3)", marginLeft: 6 }}>avg {avg.toFixed(1)}h</span>
                     )}
                   </td>
-                  <td>
-                    <span style={{ fontSize: 13, color: "#3C3489" }}>{r.capturedHours.toFixed(1)}h</span>
-                    {bigGap && (
-                      <span style={{ fontSize: 10, color: gap > 0 ? "#854F0B" : "#A32D2D", marginLeft: 6 }}>
-                        {gap > 0 ? "+" : ""}{gap.toFixed(1)}h
-                      </span>
-                    )}
-                  </td>
+                  <td style={{ fontSize: 13 }}>{r.totalShifts}</td>
                   <td style={{ fontSize: 13 }}>{r.logged}</td>
                   <td style={{ fontSize: 13, color: r.missed > 0 ? "#A32D2D" : "var(--c-text-3)" }}>{r.missed}</td>
+                  <td style={{ fontSize: 13, color: r.rejectedShifts > 0 ? "#A32D2D" : "var(--c-text-3)" }}>{r.rejectedShifts}</td>
                   <td style={{ fontSize: 13 }}>{r.leaveCount}</td>
-                  <td style={{ fontSize: 13, color: "var(--c-text-3)" }}>{r.weekoffs}</td>
                   <td style={{ fontSize: 13, color: "var(--c-text-3)" }}>{r.holidayCount}</td>
                 </tr>
               );
