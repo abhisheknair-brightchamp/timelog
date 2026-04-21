@@ -30,7 +30,7 @@ export function nowInTz(iana: string): Date {
 
 /** Today's date string (YYYY-MM-DD) in given timezone */
 export function todayInTz(iana: string): string {
-  return nowInTz(iana).toISOString().slice(0, 10);
+  return new Date().toLocaleDateString("en-CA", { timeZone: iana });
 }
 
 /** Format UTC ms as IST display string */
