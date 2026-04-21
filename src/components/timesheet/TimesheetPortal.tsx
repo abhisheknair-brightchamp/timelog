@@ -378,7 +378,7 @@ function MyHistory() {
   const unreadNotifications = myNotifications.filter((n) => !n.read);
 
   const myQueries = queries.filter((q) => q.employeeId === currentEmployeeId);
-  const openQueries = myQueries.filter((q) => q.status === "open" && !q.response);
+  const openQueries = myQueries.filter((q) => q.status === "open");
 
   const [replyFor, setReplyFor] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
