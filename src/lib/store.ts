@@ -1080,6 +1080,7 @@ export const useStore = create<AppState>()(
               entryMap[tsId].push({
                 vertical: String(r.vertical || ""),
                 hours: Number(r.hours) || 0,
+                note: String(r.note || ""),
               });
             });
           }
