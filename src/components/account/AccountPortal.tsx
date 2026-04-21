@@ -21,14 +21,14 @@ export default function AccountPortal() {
 }
 
 function ProfilePage() {
-  const { employees, updateEmployee, currentEmployeeId } = useStore((s) => ({
+  const { employees, updateEmployee, currentEmployeeId } = useStore((s: any) => ({
     employees: s.employees,
     updateEmployee: s.updateEmployee,
     currentEmployeeId: s.currentEmployeeId,
   }));
-  const emp = employees.find((e) => e.id === currentEmployeeId)!;
-  const empIdx = employees.findIndex((e) => e.id === currentEmployeeId);
-  const c = empColor(empIdx);
+  const emp = employees.find((e: any) => e.id === currentEmployeeId);
+  const empIdx = employees.findIndex((e: any) => e.id === currentEmployeeId);
+  const c = empColor(empIdx >= 0 ? empIdx : 0);
   const [name, setName] = useState(emp?.name || "");
   const [email, setEmail] = useState(emp?.email || "");
   const [tz, setTz] = useState(emp?.timezone || "Asia/Kolkata");
@@ -45,8 +45,8 @@ function ProfilePage() {
     const iv = setInterval(tick, 1000);
     return () => clearInterval(iv);
   }, [tz]);
-  const tzInfo = TIMEZONES.find((t) => t.iana === tz) || TIMEZONES[0];
-  if (!emp) return <PageShell title="Account" subtitle="Loading..."><div /></PageShell>;
+  const tzInfo = TIMEZONES.find((t: any) => t.iana === tz) || TIMEZONES[0];
+  if (!emp) return <PageShell title="Account" subtitle="Loading your profile..."><div style={{padding:20,color:"var(--c-text-3)"}}>Loading...</div></PageShell>;
   return (
     <PageShell title="Profile & timezone" subtitle="Your account settings">
       <InfoBanner>Your timezone saves once and auto-applies to every timesheet.</InfoBanner>
@@ -60,7 +60,7 @@ function ProfilePage() {
             <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 6 }}>{emp.name}</div>
             <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
               <Chip label={emp.role} variant="green" />
-              {emp.verticals.map((v: string) => <Chip key={v} label={v} variant="purple" tiny />)}
+              {(emp.verticals || []).map((v: string) => <Chip key={v} label={v} variant="purple" tiny />)}
             </div>
           </div>
         </div>
@@ -89,7 +89,7 @@ function ProfilePage() {
         <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 14 }}>
           <label style={{ fontSize: 11, color: "var(--c-text-2)" }}>Your timezone</label>
           <select value={tz} onChange={(e) => setTz(e.target.value)} style={{ maxWidth: 340 }}>
-            {TIMEZONES.map((t) => <option key={t.iana} value={t.iana}>{t.label}</option>)}
+            {TIMEZONES.map((t: any) => <option key={t.iana} value={t.iana}>{t.label}</option>)}
           </select>
         </div>
         <div style={{ display: "flex", gap: 16, marginBottom: 16 }}>
@@ -108,7 +108,7 @@ function ProfilePage() {
       <Card>
         <div style={{ fontSize: 12, color: "var(--c-text-2)", marginBottom: 10 }}>Assigned by admin.</div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {emp.verticals.length ? emp.verticals.map((v: string) => <Chip key={v} label={v} variant="purple" />) : <span style={{ fontSize: 12, color: "var(--c-text-3)" }}>None assigned</span>}
+          {(emp.verticals || []).length ? (emp.verticals || []).map((v: string) => <Chip key={v} label={v} variant="purple" />) : <span style={{ fontSize: 12, color: "var(--c-text-3)" }}>None assigned</span>}
         </div>
       </Card>
     </PageShell>
@@ -116,19 +116,19 @@ function ProfilePage() {
 }
 
 function SchedulePage() {
-  const { employees, holidays, leaves, currentEmployeeId } = useStore((s) => ({
+  const { employees, holidays, leaves, currentEmployeeId } = useStore((s: any) => ({
     employees: s.employees, holidays: s.holidays, leaves: s.leaves, currentEmployeeId: s.currentEmployeeId,
   }));
-  const emp = employees.find((e) => e.id === currentEmployeeId)!;
+  const emp = employees.find((e: any) => e.id === currentEmployeeId);
   const today = new Date().toISOString().slice(0, 10);
-  const upcoming = holidays.filter((h: any) => h.date >= today).slice(0, 6);
-  const myLeaves = leaves.filter((l: any) => l.employeeId === currentEmployeeId);
+  const upcoming = (holidays || []).filter((h: any) => h.date >= today).slice(0, 6);
+  const myLeaves = (leaves || []).filter((l: any) => l.employeeId === currentEmployeeId);
   const LEAVE_COLORS: Record<string, { bg: string; color: string; label: string }> = {
     sick:   { bg: "#FCEBEB", color: "#A32D2D", label: "Sick leave" },
     annual: { bg: "#E6F1FB", color: "#185FA5", label: "Annual leave" },
     other:  { bg: "#F1EFE8", color: "#5F5E5A", label: "Other" },
   };
-  if (!emp) return <PageShell title="Schedule" subtitle="Loading..."><div /></PageShell>;
+  if (!emp) return <PageShell title="Schedule" subtitle="Loading..."><div style={{padding:20,color:"var(--c-text-3)"}}>Loading...</div></PageShell>;
   return (
     <PageShell title="Schedule & leaves" subtitle="Your work schedule and leave history">
       <InfoBanner>To apply or cancel leaves, go to <strong>Timesheet → My leaves</strong>.</InfoBanner>
@@ -136,7 +136,7 @@ function SchedulePage() {
       <Card>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
           {[0,1,2,3,4,5,6].map((d) => {
-            const isOff = emp.weekoffs.includes(d);
+            const isOff = (emp.weekoffs || []).includes(d);
             return (
               <div key={d} style={{ textAlign: "center" }}>
                 <div style={{ width: 42, height: 42, borderRadius: "var(--r-sm)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 500, background: isOff ? "#E1F5EE" : "var(--c-bg)", color: isOff ? "#0F6E56" : "var(--c-text-2)", border: "0.5px solid " + (isOff ? "#9FE1CB" : "var(--c-border-strong)") }}>
