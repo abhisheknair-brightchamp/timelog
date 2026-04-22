@@ -1,11 +1,10 @@
 const API_URL = process.env.NEXT_PUBLIC_SHEETS_URL || "";
 
 async function appsScriptPost(action: string, data: any) {
-  const res = await fetch(API_URL, {
+  const res = await fetch("/api/sheets", {
     method: "POST",
-    headers: { "Content-Type": "text/plain" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, data }),
-    redirect: "follow",
   });
   return res.json();
 }
