@@ -214,7 +214,7 @@ function handleVerifyOTP(data) {
   const rows = sessSheet.getDataRange().getValues();
   
   for (let i = 1; i < rows.length; i++) {
-    if (rows[i][0] === email && rows[i][1] === otp) {
+    if (rows[i][0] === email && String(rows[i][1]) === String(otp)) {
       const expiresAt = rows[i][2];
       if (Date.now() > expiresAt) {
         sessSheet.deleteRow(i + 1);
