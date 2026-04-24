@@ -109,6 +109,7 @@ function LogToday() {
   }
 
   function onClockIn() {
+    if (!emp) return;
     startWorkday(currentEmployeeId, todayLocal, emp.timezone);
     showToast("Clocked in — have a productive session");
   }
