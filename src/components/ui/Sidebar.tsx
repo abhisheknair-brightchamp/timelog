@@ -61,7 +61,7 @@ export default function Sidebar() {
   const emp = employees.find((e) => e.id === currentEmployeeId);
   const empIdx = employees.findIndex((e) => e.id === currentEmployeeId);
   const color = empColor(empIdx >= 0 ? empIdx : 0);
-  const portals: Portal[] = ["admin", "account", "timesheet"];
+  const portals: Portal[] = isAdmin ? ["admin", "account", "timesheet"] : ["account", "timesheet"];
   const portalLabels: Record<Portal, string> = { admin: "Admin", account: "Account", timesheet: "Sheet" };
 
   function handleLogout() {
