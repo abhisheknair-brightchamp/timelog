@@ -68,8 +68,13 @@ export default function Sidebar() {
     logout();
     if (typeof window !== "undefined") {
       const { clearSession } = require("@/lib/auth");
-      await clearSession();
-      window.location.reload();
+      try {
+        await clearSession();
+      } catch (e) {
+        console.error("Logout error:", e);
+      }
+      // Redirect instead of reload for cleaner logout
+      window.location.href = "/";
     }
   }
 
