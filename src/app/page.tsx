@@ -23,6 +23,7 @@ export default function Home() {
     })
   );
   const [loading, setLoading] = useState(true);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   async function syncData() {
     try {
@@ -82,7 +83,8 @@ export default function Home() {
 
     // Listen for Supabase auth state changes (e.g. token refresh, sign-out)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event: AuthChangeEvent) => {
-      if (event === "SIGNED_OUT") {
+      if (event === "SIGNED_OUT" && !isSigningOut) {
+        setIsSigningOut(true);
         clearSession();
         useStore.getState().logout();
       }
