@@ -224,7 +224,7 @@ export default function Employees() {
                 </td>
                 <td style={{ display: "flex", gap: 4 }}>
                   <Button size="xs" onClick={() => openEdit(e)}>Edit</Button>
-                  <Button size="xs" variant="secondary" onClick={() => { setAccountFor(e); setTempPassword(""); }}>Set Password</Button>
+                  <Button size="xs" onClick={() => { setAccountFor(e); setTempPassword(""); }}>Set Password</Button>
                 </td>
               </tr>
             ))}
