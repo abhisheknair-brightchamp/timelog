@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import type { AuthChangeEvent } from "@supabase/supabase-js";
 import { useStore } from "@/lib/store";
 import { getSession, saveSession, clearSession } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
@@ -75,7 +76,7 @@ export default function Home() {
     init();
 
     // Listen for Supabase auth state changes (e.g. token refresh, sign-out)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: AuthChangeEvent) => {
       if (event === "SIGNED_OUT") {
         clearSession();
         useStore.getState().logout();
