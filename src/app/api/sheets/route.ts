@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
 
 const SHEETS_URL = process.env.NEXT_PUBLIC_SHEETS_URL || "";
