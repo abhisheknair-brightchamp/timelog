@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
     // Check if they already have a profile with a password set
     const { data: profile, error: profileError } = await admin
       .from("user_profiles")
-      .select("has_password, role, employee_id")
+      .select("id, has_password, role, employee_id, is_temp_password")
       .eq("email", email)
       .maybeSingle();
 
@@ -54,6 +54,8 @@ export async function GET(req: NextRequest) {
         exists: true,
         role: profile.role,
         employeeId: profile.employee_id,
+        isTempPassword: profile.is_temp_password === true,
+        userId: profile.id,
       });
     }
 

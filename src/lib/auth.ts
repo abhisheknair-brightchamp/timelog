@@ -101,15 +101,16 @@ export async function login(email: string, password: string) {
     return { ok: false, result: { error: error?.message || "Login failed" } };
   }
 
-  // Fetch profile for role + employeeId
+  // Fetch profile for role + employeeId + temp password flag
   const { data: profile } = await supabase
     .from("user_profiles")
-    .select("role, employee_id")
+    .select("role, employee_id, is_temp_password")
     .eq("id", data.user.id)
     .maybeSingle();
 
   const role = profile?.role || "employee";
   const employeeId = profile?.employee_id ?? null;
+  const isTempPassword = profile?.is_temp_password === true;
 
   return {
     ok: true,
@@ -118,6 +119,8 @@ export async function login(email: string, password: string) {
       email: data.user.email,
       role,
       employeeId,
+      isTempPassword,
+      userId: data.user.id,
     },
   };
 }

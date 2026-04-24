@@ -27,6 +27,9 @@ export default function Employees() {
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<FormData>(emptyForm());
+  const [accountFor, setAccountFor] = useState<Employee | null>(null);
+  const [tempPassword, setTempPassword] = useState("");
+  const [accountLoading, setAccountLoading] = useState(false);
 
   function openAdd() { setForm(emptyForm()); setEditId(null); setShowForm(true); }
   function openEdit(e: Employee) {
@@ -55,12 +58,64 @@ export default function Employees() {
     setForm((f) => ({ ...f, verticals: f.verticals.includes(v) ? f.verticals.filter((x) => x !== v) : [...f.verticals, v] }));
   }
 
+  async function handleCreateAccount() {
+    if (!accountFor || !tempPassword) return;
+    if (tempPassword.length < 6) { showToast("Password must be at least 6 characters"); return; }
+    setAccountLoading(true);
+    try {
+      const res = await fetch("/api/auth/create-account", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: accountFor.email, tempPassword, employeeId: accountFor.id }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        showToast(`Account created for ${accountFor.name}`);
+        setAccountFor(null);
+        setTempPassword("");
+      } else {
+        showToast(data.error || "Failed to create account");
+      }
+    } catch {
+      showToast("Network error");
+    } finally {
+      setAccountLoading(false);
+    }
+  }
+
   return (
     <PageShell
       title="Employees"
       subtitle="Onboard and manage your team"
       actions={<Button variant="primary" onClick={openAdd}>+ Add employee</Button>}
     >
+      {/* Set Password Modal */}
+      {accountFor && (
+        <Card highlight>
+          <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 14 }}>
+            Set temp password for <strong>{accountFor.name}</strong>
+          </div>
+          <div style={{ fontSize: 12, color: "var(--c-text-2)", marginBottom: 12 }}>
+            Employee will be prompted to change this on first login.
+          </div>
+          <Field label="Temporary password (min 6 chars)">
+            <input
+              type="text"
+              value={tempPassword}
+              onChange={(e) => setTempPassword(e.target.value)}
+              placeholder="e.g. Welcome@123"
+              autoFocus
+            />
+          </Field>
+          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+            <Button variant="primary" size="sm" onClick={handleCreateAccount} disabled={accountLoading}>
+              {accountLoading ? "Creating…" : "Create Account"}
+            </Button>
+            <Button size="sm" onClick={() => { setAccountFor(null); setTempPassword(""); }}>Cancel</Button>
+          </div>
+        </Card>
+      )}
+
       {/* Form */}
       {showForm && (
         <Card highlight>
@@ -167,7 +222,10 @@ export default function Employees() {
                 <td style={{ fontSize: 11, color: "var(--c-text-3)" }}>
                   {TIMEZONES.find((t) => t.iana === e.timezone)?.short || "IST"}
                 </td>
-                <td><Button size="xs" onClick={() => openEdit(e)}>Edit</Button></td>
+                <td style={{ display: "flex", gap: 4 }}>
+                  <Button size="xs" onClick={() => openEdit(e)}>Edit</Button>
+                  <Button size="xs" variant="secondary" onClick={() => { setAccountFor(e); setTempPassword(""); }}>Set Password</Button>
+                </td>
               </tr>
             ))}
           </tbody>

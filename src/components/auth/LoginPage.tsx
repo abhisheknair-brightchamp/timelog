@@ -3,7 +3,7 @@ import { useState, useRef } from "react";
 import { sendOTP, verifyOTP, createPassword, login, checkUserExists } from "@/lib/auth";
 import { showToast, Toast } from "@/components/ui";
 
-type Step = "email" | "otp" | "create-password" | "login-password";
+type Step = "email" | "otp" | "create-password" | "login-password" | "change-password";
 
 const BRAND = "#6B5CE7";
 const BRAND_DARK = "#5548CC";
@@ -14,6 +14,10 @@ export default function LoginPage({ onAuthenticated }: { onAuthenticated: (data:
   const [otp, setOtp] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [userId, setUserId] = useState("");
+  const [pendingAuth, setPendingAuth] = useState<any>(null);
   const submitting = useRef(false);
 
   async function handleEmailSubmit() {
@@ -67,9 +71,45 @@ export default function LoginPage({ onAuthenticated }: { onAuthenticated: (data:
     setLoading(true);
     try {
       const res = await login(email, password);
-      if (res.ok && res.result?.authenticated) onAuthenticated({ email: res.result.email, role: res.result.role, employeeId: res.result.employeeId });
-      else showToast(res.result?.error || "Login failed");
+      if (res.ok && res.result?.authenticated) {
+        const authData = { email: res.result.email, role: res.result.role, employeeId: res.result.employeeId };
+        // Check if temp password — force change before entering app
+        if (res.result.isTempPassword) {
+          setUserId(res.result.userId || "");
+          setPendingAuth(authData);
+          setNewPassword("");
+          setConfirmPassword("");
+          setStep("change-password");
+        } else {
+          onAuthenticated(authData);
+        }
+      } else {
+        showToast(res.result?.error || "Login failed");
+      }
     } catch (err: any) { showToast("Network error"); }
+    finally { setLoading(false); submitting.current = false; }
+  }
+
+  async function handleChangePassword() {
+    if (submitting.current) return;
+    if (newPassword.length < 8) { showToast("Min 8 characters"); return; }
+    if (newPassword !== confirmPassword) { showToast("Passwords don't match"); return; }
+    submitting.current = true;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, newPassword }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        showToast("Password updated!");
+        onAuthenticated(pendingAuth);
+      } else {
+        showToast(data.error || "Failed to update password");
+      }
+    } catch { showToast("Network error"); }
     finally { setLoading(false); submitting.current = false; }
   }
 
@@ -143,6 +183,36 @@ export default function LoginPage({ onAuthenticated }: { onAuthenticated: (data:
             <button onClick={() => { setStep("email"); setPassword(""); }} style={linkBtn()}>Different email</button>
             <button onClick={async () => { setStep("otp"); setPassword(""); setOtp(""); submitting.current = false; await sendOTP(email); showToast("OTP sent!"); }} style={linkBtn(BRAND)}>Forgot password?</button>
           </div>
+        </>}
+
+        {step === "change-password" && <>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6, color: "#1a1830" }}>Set your password</div>
+          <div style={{ fontSize: 12, color: "#52506e", marginBottom: 22 }}>
+            You're using a temporary password. Please set a permanent one to continue.
+          </div>
+          <input
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder="New password (min 8 chars)"
+            style={{ marginBottom: 10 }}
+            autoFocus
+          />
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleChangePassword()}
+            placeholder="Confirm new password"
+            style={{ marginBottom: 14 }}
+          />
+          <button
+            onClick={handleChangePassword}
+            disabled={loading || newPassword.length < 8 || newPassword !== confirmPassword}
+            style={btnStyle(loading || newPassword.length < 8 || newPassword !== confirmPassword)}
+          >
+            {loading ? "Saving…" : "Set Password & Continue →"}
+          </button>
         </>}
 
         <div style={{ marginTop: 32, paddingTop: 18, borderTop: `0.5px solid #EEEDFE`, fontSize: 11, color: "#9b99b2", textAlign: "center" }}>
