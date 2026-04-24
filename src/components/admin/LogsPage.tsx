@@ -286,9 +286,20 @@ export default function LogsPage() {
                 onChange={(e) => setAdjustValue(parseFloat(e.target.value))}
                 style={{ width: "100%", accentColor: "var(--c-brand)" }}
               />
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--c-text-3)", marginTop: 2 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, color: "var(--c-text-3)", marginTop: 8 }}>
                 <span>0h</span>
-                <span style={{ fontSize: 20, fontWeight: 700, color: "var(--c-brand-dark)" }}>{adjustValue.toFixed(2)}h</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={max}
+                  step={step}
+                  value={adjustValue}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    if (!isNaN(v)) setAdjustValue(Math.min(max, Math.max(0, v)));
+                  }}
+                  style={{ width: 80, textAlign: "center", fontSize: 20, fontWeight: 700, color: "var(--c-brand-dark)", border: "0.5px solid var(--c-border-strong)", borderRadius: "var(--r-sm)", padding: "2px 6px" }}
+                />
                 <span>{max.toFixed(2)}h</span>
               </div>
             </div>
