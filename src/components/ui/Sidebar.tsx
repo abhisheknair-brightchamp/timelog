@@ -9,6 +9,7 @@ const NAV: Record<Portal, { id: string; label: string }[]> = {
   admin: [
     { id: "dashboard",  label: "Dashboard"        },
     { id: "analytics",  label: "Analytics"         },
+    { id: "logs",       label: "All logs"          },
     { id: "team",       label: "Team"              },
     { id: "employees",  label: "Employees"         },
     { id: "roles",      label: "Roles & verticals" },

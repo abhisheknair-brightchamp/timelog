@@ -10,10 +10,12 @@ import HolidaysPage from "./HolidaysPage";
 import AuditLog from "./AuditLog";
 import SettingsPage from "./SettingsPage";
 import Analytics from "./Analytics";
+import LogsPage from "./LogsPage";
 
 const PAGE_MAP: Record<string, React.ComponentType> = {
   dashboard: Dashboard,
   analytics: Analytics,
+  logs: LogsPage,
   team: TeamView,
   employees: Employees,
   roles: RolesVerticals,

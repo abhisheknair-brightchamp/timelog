@@ -273,7 +273,7 @@ export const useStore = create<AppState>()(
       config: {
         roles: ["Admin", "Instructor", "Team Lead", "Trainer"],
         verticals: ["Roblox", "Coding", "Maths", "English", "Chess"],
-        sheetsUrl: "",
+        sheetsUrl: process.env.NEXT_PUBLIC_SHEETS_URL || "",
       },
       updateConfig: (partial) =>
         set((s) => ({ config: { ...s.config, ...partial } })),
@@ -980,7 +980,7 @@ export const useStore = create<AppState>()(
                     .filter(Boolean)
                 : [],
               timezone: String(r.timezone || "Asia/Kolkata"),
-              weekoffs: r.weekoffs
+              weekoffs: (r.weekoffs !== "" && r.weekoffs !== null && r.weekoffs !== undefined)
                 ? String(r.weekoffs)
                     .split(",")
                     .map(Number)
