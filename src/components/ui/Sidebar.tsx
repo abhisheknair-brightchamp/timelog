@@ -64,11 +64,11 @@ export default function Sidebar() {
   const portals: Portal[] = isAdmin ? ["admin", "account", "timesheet"] : ["account", "timesheet"];
   const portalLabels: Record<Portal, string> = { admin: "Admin", account: "Account", timesheet: "Sheet" };
 
-  function handleLogout() {
+  async function handleLogout() {
     logout();
     if (typeof window !== "undefined") {
       const { clearSession } = require("@/lib/auth");
-      clearSession();
+      await clearSession();
       window.location.reload();
     }
   }

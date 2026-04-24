@@ -63,17 +63,15 @@ function LogToday() {
     currentEmployeeId: s.currentEmployeeId,
   }));
 
-  const emp = employees.find((e) => e.id === currentEmployeeId)!;
-  if (!emp) return <div style={{ padding: 32, color: "var(--c-text-3)", fontSize: 13 }}>Loading…</div>;
-  const tz = TIMEZONES.find((t) => t.iana === emp.timezone) || TIMEZONES[0];
-  const todayLocal = new Date().toLocaleDateString("en-CA", { timeZone: emp.timezone });
+  const emp = employees.find((e) => e.id === currentEmployeeId);
+  const todayLocal = emp
+    ? new Date().toLocaleDateString("en-CA", { timeZone: emp.timezone })
+    : new Date().toLocaleDateString("en-CA");
 
-  const status: DayStatus = getDayStatus(emp, todayLocal, holidays, timesheets, todayLocal, leaves);
-  const todayShifts = getShifts(currentEmployeeId, todayLocal).slice().sort((a, b) => (a.startedAt || 0) - (b.startedAt || 0));
+  const todayShifts = emp
+    ? getShifts(currentEmployeeId, todayLocal).slice().sort((a, b) => (a.startedAt || 0) - (b.startedAt || 0))
+    : [];
   const activeShift = todayShifts.find((t) => t.status === "in-progress");
-  const completedShifts = todayShifts.filter((t) => t.status !== "in-progress");
-  const leave = getLeave(currentEmployeeId, todayLocal);
-  const holiday = holidays.find((h) => h.date === todayLocal);
 
   // Live clock — updates while on the clock
   const [now, setNow] = useState(Date.now());
@@ -95,6 +93,14 @@ function LogToday() {
   const [showLeaveForm, setShowLeaveForm] = useState(false);
   const [leaveType, setLeaveType] = useState<LeaveType>("sick");
   const [leaveNote, setLeaveNote] = useState("");
+
+  if (!emp) return <div style={{ padding: 32, color: "var(--c-text-3)", fontSize: 13 }}>Loading…</div>;
+  const tz = TIMEZONES.find((t) => t.iana === emp.timezone) || TIMEZONES[0];
+
+  const status: DayStatus = getDayStatus(emp, todayLocal, holidays, timesheets, todayLocal, leaves);
+  const completedShifts = todayShifts.filter((t) => t.status !== "in-progress");
+  const leave = getLeave(currentEmployeeId, todayLocal);
+  const holiday = holidays.find((h) => h.date === todayLocal);
 
   function addRow() { setRows((r) => [...r, { vertical: config.verticals[0] || "", note: "", hours: 0 }]); }
   function removeRow(i: number) { setRows((r) => r.filter((_, idx) => idx !== i)); }

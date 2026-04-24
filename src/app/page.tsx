@@ -2,6 +2,8 @@
 import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
 import { getSession, saveSession, clearSession } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
+import { fetchAllData } from "@/lib/db";
 import LoginPage from "@/components/auth/LoginPage";
 import Sidebar from "@/components/ui/Sidebar";
 import AdminPortal from "@/components/admin/AdminPortal";
@@ -9,56 +11,103 @@ import AccountPortal from "@/components/account/AccountPortal";
 import TimesheetPortal from "@/components/timesheet/TimesheetPortal";
 import { Toast } from "@/components/ui";
 
-const API_URL = process.env.NEXT_PUBLIC_SHEETS_URL || "";
-
 export default function Home() {
-  const { portal, isAuthenticated, setAuth, currentEmployeeId, loadFromSheets } = useStore((s: any) => ({
-    portal: s.portal,
-    isAuthenticated: s.isAuthenticated,
-    setAuth: s.setAuth,
-    currentEmployeeId: s.currentEmployeeId,
-    loadFromSheets: s.loadFromSheets,
-  }));
+  const { portal, isAuthenticated, setAuth, currentEmployeeId, loadFromSupabase } = useStore(
+    (s: any) => ({
+      portal: s.portal,
+      isAuthenticated: s.isAuthenticated,
+      setAuth: s.setAuth,
+      currentEmployeeId: s.currentEmployeeId,
+      loadFromSupabase: s.loadFromSupabase,
+    })
+  );
   const [loading, setLoading] = useState(true);
 
-  async function fetchAndLoad() {
-    if (!API_URL) return; // Sheets not configured — run on localStorage only
+  async function syncData() {
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 12000); // 12s max
-      const res = await fetch(API_URL + "?action=getAll", { redirect: "follow", signal: controller.signal });
-      clearTimeout(timeout);
-      const data = await res.json();
-      if (data.employees) loadFromSheets(data);
-    } catch (e: any) {
-      if (e?.name !== "AbortError") console.error("Sheets sync failed:", e);
+      const data = await fetchAllData();
+      loadFromSupabase(data);
+    } catch (e) {
+      console.error("Supabase sync failed:", e);
       // App continues with cached localStorage data
     }
   }
 
   useEffect(() => {
     async function init() {
-      const session = getSession();
+      // 1. Check for an active Supabase session (handles token refresh)
+      const { data: { session } } = await supabase.auth.getSession();
+
       if (session) {
-        setAuth(session.email, session.role, session.employeeId);
-        // Employees are cached in localStorage (partialize) so the app renders
-        // instantly. We still await Sheets for fresh timesheets/queries.
-        await fetchAndLoad();
+        // Fetch the user's profile for role + employeeId
+        const { data: profile } = await supabase
+          .from("user_profiles")
+          .select("role, employee_id")
+          .eq("id", session.user.id)
+          .maybeSingle();
+
+        if (profile) {
+          const role = profile.role || "employee";
+          const employeeId = role === "admin" ? null : profile.employee_id;
+          setAuth(session.user.email!, role, employeeId);
+          saveSession({ email: session.user.email!, role, employeeId });
+          await syncData();
+        } else {
+          // Profile missing — fall back to localStorage session
+          const cached = getSession();
+          if (cached) {
+            setAuth(cached.email, cached.role, cached.employeeId);
+            await syncData();
+          }
+        }
+      } else {
+        // No Supabase session — check localStorage fallback
+        const cached = getSession();
+        if (cached) {
+          // Stale session: clear it and force re-login
+          clearSession();
+        }
       }
+
       setLoading(false);
     }
+
     init();
+
+    // Listen for Supabase auth state changes (e.g. token refresh, sign-out)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") {
+        clearSession();
+        useStore.getState().logout();
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  async function handleAuthenticated(data: { email: string; role: string; employeeId?: string | null }) {
+  async function handleAuthenticated(data: {
+    email: string;
+    role: string;
+    employeeId?: string | null;
+  }) {
     saveSession(data);
     setAuth(data.email, data.role, data.employeeId);
-    await fetchAndLoad(); // sync fresh data before entering the app
+    await syncData();
   }
 
   if (loading) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#16104D", color: "#fff", fontSize: 14 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100vh",
+          background: "#16104D",
+          color: "#fff",
+          fontSize: 14,
+        }}
+      >
         Loading...
       </div>
     );
@@ -69,9 +118,18 @@ export default function Home() {
   const isAdmin = currentEmployeeId === "admin";
 
   return (
-    <div style={{ display: "flex", height: "100vh", overflow: "hidden", background: "var(--c-bg)" }}>
+    <div
+      style={{
+        display: "flex",
+        height: "100vh",
+        overflow: "hidden",
+        background: "var(--c-bg)",
+      }}
+    >
       <Sidebar />
-      <main style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <main
+        style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}
+      >
         {isAdmin ? (
           <AdminPortal />
         ) : (
