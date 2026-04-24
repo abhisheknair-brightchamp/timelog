@@ -161,7 +161,7 @@ export function syncTabs(store: StoreApi<AppState>) {
   if (typeof window === "undefined") return;
 
   const handler = (e: StorageEvent) => {
-    if (e.key === "timelog-v1" && e.newValue) {
+    if (e.key === "timelog-v2" && e.newValue) {
       try {
         const parsed = JSON.parse(e.newValue);
         if (parsed.state) {
@@ -662,21 +662,10 @@ export const useStore = create<AppState>()(
       resetCheckin: (tsId) => {
         const ts = get().timesheets.find((t) => t.id === tsId);
         if (!ts) return;
-        const updated: Timesheet = {
-          ...ts,
-          startedAt: undefined,
-          endedAt: undefined,
-          totalHours: 0,
-          capturedHours: 0,
-          submitted: false,
-          submittedAt: undefined,
-          status: "in-progress",
-        };
-        set((s) => ({
-          timesheets: s.timesheets.map((t) =>
-            t.id === tsId ? updated : t
-          ),
-        }));
+        // Delete the record entirely so the employee can clock in fresh.
+        // Leaving an in-progress record with no startedAt creates a zombie
+        // that blocks startWorkday from creating a new shift.
+        set((s) => ({ timesheets: s.timesheets.filter((t) => t.id !== tsId) }));
         const actorId = get().currentEmployeeId;
         const actorName =
           actorId === "admin"
@@ -695,7 +684,7 @@ export const useStore = create<AppState>()(
           `Your check-in time for ${ts.date} was reset by ${actorName} — please clock in again`,
           ts.date
         );
-        sheetsPost(get().config.sheetsUrl, "resetCheckin", { id: tsId });
+        sheetsPost(get().config.sheetsUrl, "resetShift", { id: tsId });
       },
       resetCheckout: (tsId) => {
         const ts = get().timesheets.find((t) => t.id === tsId);

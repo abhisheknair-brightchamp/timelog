@@ -33,8 +33,13 @@ export function saveSession(data: { email: string; role: string; employeeId?: st
 }
 export function getSession() {
   if (typeof window === "undefined") return null;
-  const raw = localStorage.getItem("bt_session");
-  return raw ? JSON.parse(raw) : null;
+  try {
+    const raw = localStorage.getItem("bt_session");
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    localStorage.removeItem("bt_session");
+    return null;
+  }
 }
 export function clearSession() {
   localStorage.removeItem("bt_session");

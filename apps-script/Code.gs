@@ -321,6 +321,7 @@ function handleSubmitTimesheet(ts) {
   const entrySheet = getSheet(SHEETS.TIMESHEET_ENTRIES);
   const tsId = ts.id || uid();
   const rows = sheet.getDataRange().getValues();
+  const headers = rows[0];
   // Upsert by shift id (multiple shifts per employee/day now allowed)
   let rowIdx = -1;
   for (let i = 1; i < rows.length; i++) {
@@ -337,6 +338,9 @@ function handleSubmitTimesheet(ts) {
   ];
   if (rowIdx > 0) {
     sheet.getRange(rowIdx, 1, 1, tsRow.length).setValues([tsRow]);
+    // Clear adjustedHours on re-submit so old admin overrides don't persist
+    const adjCol = getOrCreateCol(sheet, headers, "adjustedHours");
+    sheet.getRange(rowIdx, adjCol + 1).setValue("");
     // Remove prior entries for this ts and re-append fresh
     const erows = entrySheet.getDataRange().getValues();
     for (let i = erows.length - 1; i > 0; i--) {
@@ -357,13 +361,15 @@ function handleSubmitTimesheet(ts) {
 function handleRejectTimesheet(data) {
   const sheet = getSheet(SHEETS.TIMESHEETS);
   const rows = sheet.getDataRange().getValues();
+  const h = rows[0];
+  const col = (name) => h.indexOf(name) + 1; // 1-based
   for (let i = 1; i < rows.length; i++) {
     if (rows[i][0] === data.id) {
-      sheet.getRange(i + 1, 13).setValue("rejected"); // status col
-      sheet.getRange(i + 1, 15).setValue(data.rejectedAt || Date.now()); // rejectedAt_UTC
-      sheet.getRange(i + 1, 16).setValue(data.rejectedBy || "");
-      sheet.getRange(i + 1, 17).setValue(data.rejectedByName || "");
-      sheet.getRange(i + 1, 18).setValue(data.reason || "");
+      sheet.getRange(i + 1, col("status")).setValue("rejected");
+      sheet.getRange(i + 1, col("rejectedAt_UTC")).setValue(data.rejectedAt || Date.now());
+      sheet.getRange(i + 1, col("rejectedBy")).setValue(data.rejectedBy || "");
+      sheet.getRange(i + 1, col("rejectedByName")).setValue(data.rejectedByName || "");
+      sheet.getRange(i + 1, col("rejectionReason")).setValue(data.reason || "");
       return { ok: true };
     }
   }
@@ -373,17 +379,29 @@ function handleRejectTimesheet(data) {
 function handleReverseRejection(data) {
   const sheet = getSheet(SHEETS.TIMESHEETS);
   const rows = sheet.getDataRange().getValues();
+  const h = rows[0];
+  const col = (name) => h.indexOf(name) + 1;
   for (let i = 1; i < rows.length; i++) {
     if (rows[i][0] === data.id) {
-      sheet.getRange(i + 1, 13).setValue("submitted");
-      sheet.getRange(i + 1, 15).setValue("");
-      sheet.getRange(i + 1, 16).setValue("");
-      sheet.getRange(i + 1, 17).setValue("");
-      sheet.getRange(i + 1, 18).setValue("");
+      sheet.getRange(i + 1, col("status")).setValue("submitted");
+      sheet.getRange(i + 1, col("rejectedAt_UTC")).setValue("");
+      sheet.getRange(i + 1, col("rejectedBy")).setValue("");
+      sheet.getRange(i + 1, col("rejectedByName")).setValue("");
+      sheet.getRange(i + 1, col("rejectionReason")).setValue("");
       return { ok: true };
     }
   }
   return { ok: false, error: "Shift not found" };
+}
+
+function getOrCreateCol(sheet, headers, colName) {
+  let idx = headers.indexOf(colName);
+  if (idx === -1) {
+    idx = headers.length;
+    sheet.getRange(1, idx + 1).setValue(colName);
+    headers.push(colName); // keep headers in sync for callers
+  }
+  return idx;
 }
 
 function handleAdjustTimesheet(data) {
@@ -391,12 +409,7 @@ function handleAdjustTimesheet(data) {
   const sheet = getSheet(SHEETS.TIMESHEETS);
   const rows = sheet.getDataRange().getValues();
   const headers = rows[0];
-  // Find or create the adjustedHours column
-  let colIdx = headers.indexOf("adjustedHours");
-  if (colIdx === -1) {
-    colIdx = headers.length;
-    sheet.getRange(1, colIdx + 1).setValue("adjustedHours");
-  }
+  const colIdx = getOrCreateCol(sheet, headers, "adjustedHours");
   for (let i = 1; i < rows.length; i++) {
     if (rows[i][0] === id) {
       sheet.getRange(i + 1, colIdx + 1).setValue(adjustedHours);
@@ -586,34 +599,26 @@ function handleResolveQuery(data) {
 }
 
 function handleResetCheckin(data) {
-  const sheet = getSheet(SHEETS.TIMESHEETS);
-  const rows = sheet.getDataRange().getValues();
-  for (let i = 1; i < rows.length; i++) {
-    if (rows[i][0] === data.id) {
-      sheet.getRange(i + 1, 5).setValue(0);          // totalHours
-      sheet.getRange(i + 1, 6).setValue("FALSE");    // submitted
-      sheet.getRange(i + 1, 7).setValue("");          // submittedAt_UTC
-      sheet.getRange(i + 1, 11).setValue("");         // startedAt_UTC
-      sheet.getRange(i + 1, 12).setValue("");         // endedAt_UTC
-      sheet.getRange(i + 1, 13).setValue("in-progress"); // status
-      sheet.getRange(i + 1, 14).setValue(0);          // capturedHours
-      return { ok: true };
-    }
-  }
-  return { ok: false, error: "Shift not found" };
+  // Treated identically to resetShift — deletes the record so the employee
+  // can clock in fresh. A zombie in-progress record with no startedAt
+  // would block startWorkday from creating a new shift.
+  return handleResetShift(data);
 }
 
 function handleResetCheckout(data) {
   const sheet = getSheet(SHEETS.TIMESHEETS);
   const rows = sheet.getDataRange().getValues();
+  const headers = rows[0];
+  const adjCol = getOrCreateCol(sheet, headers, "adjustedHours");
   for (let i = 1; i < rows.length; i++) {
     if (rows[i][0] === data.id) {
-      sheet.getRange(i + 1, 5).setValue(0);          // totalHours
-      sheet.getRange(i + 1, 6).setValue("FALSE");    // submitted
-      sheet.getRange(i + 1, 7).setValue("");          // submittedAt_UTC
-      sheet.getRange(i + 1, 12).setValue("");         // endedAt_UTC
+      sheet.getRange(i + 1, 5).setValue(0);              // totalHours
+      sheet.getRange(i + 1, 6).setValue("FALSE");        // submitted
+      sheet.getRange(i + 1, 7).setValue("");              // submittedAt_UTC
+      sheet.getRange(i + 1, 12).setValue("");             // endedAt_UTC
       sheet.getRange(i + 1, 13).setValue("in-progress"); // status
-      sheet.getRange(i + 1, 14).setValue(0);          // capturedHours
+      sheet.getRange(i + 1, 14).setValue(0);              // capturedHours
+      sheet.getRange(i + 1, adjCol + 1).setValue("");     // clear adjustedHours
       return { ok: true };
     }
   }
