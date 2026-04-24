@@ -13,36 +13,74 @@ function getAdminClient() {
 }
 
 export async function GET(req: NextRequest) {
-  const email = req.nextUrl.searchParams.get("email")?.toLowerCase().trim();
-  if (!email) return NextResponse.json({ exists: false });
+  try {
+    const email = req.nextUrl.searchParams.get("email")?.toLowerCase().trim();
+    if (!email) return NextResponse.json({ exists: false });
 
-  const admin = getAdminClient();
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  // Check if they already have a profile with a password set
-  const { data: profile } = await admin
-    .from("user_profiles")
-    .select("has_password, role, employee_id")
-    .eq("email", email)
-    .maybeSingle();
+    if (!url || !key) {
+      console.error("Missing Supabase env vars:", { url: !!url, key: !!key });
+      return NextResponse.json(
+        { error: "Server misconfiguration: missing Supabase credentials" },
+        { status: 500 }
+      );
+    }
 
-  if (profile?.has_password) {
-    return NextResponse.json({
-      exists: true,
-      role: profile.role,
-      employeeId: profile.employee_id,
+    const admin = createClient(url, key, {
+      auth: { autoRefreshToken: false, persistSession: false },
     });
-  }
 
-  // Check if they're a registered employee (required to create account)
-  const isAdmin = email === ADMIN_EMAIL.toLowerCase();
-  if (!isAdmin) {
-    const { data: emp } = await admin
-      .from("employees")
-      .select("id")
+    // Check if they already have a profile with a password set
+    const { data: profile, error: profileError } = await admin
+      .from("user_profiles")
+      .select("has_password, role, employee_id")
       .eq("email", email)
       .maybeSingle();
-    return NextResponse.json({ exists: false, isEmployee: !!emp });
-  }
 
-  return NextResponse.json({ exists: false, isEmployee: true });
+    if (profileError) {
+      console.error("Profile query error:", profileError);
+      return NextResponse.json(
+        { error: profileError.message },
+        { status: 500 }
+      );
+    }
+
+    if (profile?.has_password) {
+      return NextResponse.json({
+        exists: true,
+        role: profile.role,
+        employeeId: profile.employee_id,
+      });
+    }
+
+    // Check if they're a registered employee (required to create account)
+    const isAdmin = email === ADMIN_EMAIL.toLowerCase();
+    if (!isAdmin) {
+      const { data: emp, error: empError } = await admin
+        .from("employees")
+        .select("id")
+        .eq("email", email)
+        .maybeSingle();
+
+      if (empError) {
+        console.error("Employee query error:", empError);
+        return NextResponse.json(
+          { error: empError.message },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({ exists: false, isEmployee: !!emp });
+    }
+
+    return NextResponse.json({ exists: false, isEmployee: true });
+  } catch (error) {
+    console.error("Check user error:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Unknown error" },
+      { status: 500 }
+    );
+  }
 }
