@@ -49,6 +49,7 @@ export interface Timesheet {
   rejectedBy?: string;
   rejectedByName?: string;
   rejectionReason?: string;
+  adjustedHours?: number; // admin override — replaces clock hours in all calculations
 }
 
 export type AuditType = "profile" | "timesheet" | "config" | "onboard" | "query";

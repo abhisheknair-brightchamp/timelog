@@ -5,7 +5,7 @@ import { useStore } from "@/lib/store";
 import {
   PageShell, Card, SectionLabel, Avatar, Chip, Button, showToast,
 } from "@/components/ui";
-import { getShiftHours, sumShiftHours, fmtIST } from "@/lib/utils";
+import { getShiftHours, getOriginalHours, sumShiftHours, fmtIST } from "@/lib/utils";
 import type { Timesheet, TimesheetEntry } from "@/types";
 
 function todayStr() {
@@ -22,7 +22,7 @@ export default function LogsPage() {
   const {
     employees, timesheets, config,
     createQuery, rejectTimesheet, reverseRejection,
-    resetShift, resetCheckin, resetCheckout, adminAddTimeLog,
+    adjustTimesheet, resetShift, resetCheckin, resetCheckout, adminAddTimeLog,
   } = useStore((s) => ({
     employees: s.employees,
     timesheets: s.timesheets,
@@ -30,6 +30,7 @@ export default function LogsPage() {
     createQuery: s.createQuery,
     rejectTimesheet: s.rejectTimesheet,
     reverseRejection: s.reverseRejection,
+    adjustTimesheet: s.adjustTimesheet,
     resetShift: s.resetShift,
     resetCheckin: s.resetCheckin,
     resetCheckout: s.resetCheckout,
@@ -45,6 +46,8 @@ export default function LogsPage() {
   const [rejectFor, setRejectFor] = useState<{ tsId: string; empName: string } | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [resetFor, setResetFor] = useState<{ ts: Timesheet; empName: string } | null>(null);
+  const [adjustFor, setAdjustFor] = useState<{ ts: Timesheet; empName: string } | null>(null);
+  const [adjustValue, setAdjustValue] = useState(0);
 
   const [addLogFor, setAddLogFor] = useState<string | null>(null);
   const [addLogDate, setAddLogDate] = useState("");
@@ -203,6 +206,11 @@ export default function LogsPage() {
                       onReject={() => { setRejectFor({ tsId: ts.id, empName: emp?.name || "?" }); setRejectReason(""); }}
                       onReverse={() => { reverseRejection(ts.id); showToast("Rejection reversed"); }}
                       onReset={() => setResetFor({ ts, empName: emp?.name || "?" })}
+                      onAdjust={() => {
+                        const orig = getOriginalHours(ts);
+                        setAdjustValue(typeof ts.adjustedHours === "number" ? ts.adjustedHours : orig);
+                        setAdjustFor({ ts, empName: emp?.name || "?" });
+                      }}
                     />
                   ))}
                 </div>
@@ -257,6 +265,58 @@ export default function LogsPage() {
         </Modal>
       )}
 
+      {/* Adjust hours modal */}
+      {adjustFor && (() => {
+        const orig = getOriginalHours(adjustFor.ts);
+        const step = 0.25;
+        const max = Math.ceil(orig / step) * step;
+        return (
+          <Modal onClose={() => setAdjustFor(null)}>
+            <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Adjust hours — {adjustFor.empName}</div>
+            <div style={{ fontSize: 12, color: "var(--c-text-3)", marginBottom: 16 }}>
+              Clocked: <strong>{orig.toFixed(2)}h</strong>. Drag to set the hours that should count.
+            </div>
+            <div style={{ marginBottom: 8 }}>
+              <input
+                type="range"
+                min={0}
+                max={max}
+                step={step}
+                value={adjustValue}
+                onChange={(e) => setAdjustValue(parseFloat(e.target.value))}
+                style={{ width: "100%", accentColor: "var(--c-brand)" }}
+              />
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--c-text-3)", marginTop: 2 }}>
+                <span>0h</span>
+                <span style={{ fontSize: 20, fontWeight: 700, color: "var(--c-brand-dark)" }}>{adjustValue.toFixed(2)}h</span>
+                <span>{max.toFixed(2)}h</span>
+              </div>
+            </div>
+            {adjustFor.ts.adjustedHours !== undefined && (
+              <div style={{ fontSize: 11, color: "var(--c-text-3)", marginBottom: 12 }}>
+                Previously adjusted to {adjustFor.ts.adjustedHours.toFixed(2)}h.{" "}
+                <button
+                  onClick={() => setAdjustValue(orig)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--c-brand-dark)", fontSize: 11, padding: 0, textDecoration: "underline" }}
+                >
+                  Reset to original
+                </button>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <Button size="sm" onClick={() => setAdjustFor(null)}>Cancel</Button>
+              <Button variant="primary" size="sm" onClick={() => {
+                adjustTimesheet(adjustFor.ts.id, adjustValue);
+                showToast(`Hours adjusted to ${adjustValue.toFixed(2)}h for ${adjustFor.empName}`);
+                setAdjustFor(null);
+              }}>
+                Save adjustment
+              </Button>
+            </div>
+          </Modal>
+        );
+      })()}
+
       {/* Add log modal */}
       {addLogFor !== null && (
         <Modal onClose={() => setAddLogFor(null)}>
@@ -308,11 +368,13 @@ export default function LogsPage() {
   );
 }
 
-function ShiftRow({ ts, tz, empName, onQuery, onReject, onReverse, onReset }: {
+function ShiftRow({ ts, tz, empName, onQuery, onReject, onReverse, onReset, onAdjust }: {
   ts: Timesheet; tz: string; empName: string;
-  onQuery: () => void; onReject: () => void; onReverse: () => void; onReset: () => void;
+  onQuery: () => void; onReject: () => void; onReverse: () => void; onReset: () => void; onAdjust: () => void;
 }) {
   const hrs = getShiftHours(ts);
+  const origHrs = getOriginalHours(ts);
+  const isAdjusted = typeof ts.adjustedHours === "number";
   const rejected = ts.status === "rejected";
   const inProgress = ts.status === "in-progress";
   const clock = (ms?: number) => ms
@@ -331,6 +393,10 @@ function ShiftRow({ ts, tz, empName, onQuery, onReject, onReverse, onReset }: {
         <span style={{ fontSize: 13, fontWeight: 500, color: rejected ? "#A32D2D" : "var(--c-brand-dark)" }}>
           {hrs.toFixed(2)}h
         </span>
+        {isAdjusted && !rejected && (
+          <span style={{ fontSize: 11, color: "var(--c-text-3)", textDecoration: "line-through" }}>{origHrs.toFixed(2)}h</span>
+        )}
+        {isAdjusted && !rejected && <Chip label="Adjusted" variant="blue" tiny />}
         {inProgress && <Chip label="On the clock" variant="purple" tiny />}
         {rejected && <Chip label="Rejected" variant="red" tiny />}
         {ts.submittedAt && (
@@ -339,6 +405,7 @@ function ShiftRow({ ts, tz, empName, onQuery, onReject, onReverse, onReset }: {
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
           {!inProgress && !rejected && (
             <>
+              <Button size="xs" onClick={onAdjust}>⇔ Adjust</Button>
               <Button size="xs" onClick={onQuery}>? Question</Button>
               <Button size="xs" variant="danger" onClick={onReject}>Reject</Button>
             </>

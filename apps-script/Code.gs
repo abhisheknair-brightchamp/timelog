@@ -151,6 +151,7 @@ function doPost(e) {
       // Shift moderation
       rejectTimesheet:  handleRejectTimesheet,
       reverseRejection: handleReverseRejection,
+      adjustTimesheet:  handleAdjustTimesheet,
       resetShift:       handleResetShift,
       resetCheckin:     handleResetCheckin,
       resetCheckout:    handleResetCheckout,
@@ -379,6 +380,26 @@ function handleReverseRejection(data) {
       sheet.getRange(i + 1, 16).setValue("");
       sheet.getRange(i + 1, 17).setValue("");
       sheet.getRange(i + 1, 18).setValue("");
+      return { ok: true };
+    }
+  }
+  return { ok: false, error: "Shift not found" };
+}
+
+function handleAdjustTimesheet(data) {
+  const { id, adjustedHours } = data;
+  const sheet = getSheet(SHEETS.TIMESHEETS);
+  const rows = sheet.getDataRange().getValues();
+  const headers = rows[0];
+  // Find or create the adjustedHours column
+  let colIdx = headers.indexOf("adjustedHours");
+  if (colIdx === -1) {
+    colIdx = headers.length;
+    sheet.getRange(1, colIdx + 1).setValue("adjustedHours");
+  }
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][0] === id) {
+      sheet.getRange(i + 1, colIdx + 1).setValue(adjustedHours);
       return { ok: true };
     }
   }

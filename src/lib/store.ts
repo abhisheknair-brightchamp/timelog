@@ -78,6 +78,7 @@ interface AppState {
   endWorkday: (tsId: string, entries: TimesheetEntry[]) => void;
   rejectTimesheet: (tsId: string, reason: string) => void;
   reverseRejection: (tsId: string) => void;
+  adjustTimesheet: (tsId: string, hours: number) => void;
   resetShift: (tsId: string) => void;
   resetCheckin: (tsId: string) => void;
   resetCheckout: (tsId: string) => void;
@@ -607,6 +608,31 @@ export const useStore = create<AppState>()(
         );
         sheetsPost(get().config.sheetsUrl, "reverseRejection", { id: tsId });
       },
+      adjustTimesheet: (tsId, hours) => {
+        const ts = get().timesheets.find((t) => t.id === tsId);
+        if (!ts) return;
+        set((s) => ({
+          timesheets: s.timesheets.map((t) =>
+            t.id === tsId ? { ...t, adjustedHours: hours } : t
+          ),
+        }));
+        const actorId = get().currentEmployeeId;
+        const actorName = actorId === "admin" ? "Admin" : get().employees.find((e) => e.id === actorId)?.name || actorId;
+        const emp = get().employees.find((e) => e.id === ts.employeeId);
+        get().addAudit(
+          "timesheet",
+          actorId,
+          emp?.name || ts.employeeId,
+          `Adjusted hours for ${ts.date} to ${hours.toFixed(2)}h (by ${actorName})`
+        );
+        get().addNotification(
+          ts.employeeId,
+          "reset",
+          `Your logged hours for ${ts.date} were adjusted to ${hours.toFixed(2)}h by ${actorName}`,
+          ts.date
+        );
+        sheetsPost(get().config.sheetsUrl, "adjustTimesheet", { id: tsId, adjustedHours: hours });
+      },
       resetShift: (tsId) => {
         const ts = get().timesheets.find((t) => t.id === tsId);
         if (!ts) return;
@@ -1132,6 +1158,9 @@ export const useStore = create<AppState>()(
                 : undefined,
               rejectionReason: r.rejectionReason
                 ? String(r.rejectionReason)
+                : undefined,
+              adjustedHours: (r.adjustedHours !== "" && r.adjustedHours !== null && r.adjustedHours !== undefined)
+                ? Number(r.adjustedHours)
                 : undefined,
             }));
 
