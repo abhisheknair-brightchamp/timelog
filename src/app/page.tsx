@@ -75,7 +75,7 @@ export default function Home() {
     init();
 
     // Listen for Supabase auth state changes (e.g. token refresh, sign-out)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string) => {
       if (event === "SIGNED_OUT") {
         clearSession();
         useStore.getState().logout();
