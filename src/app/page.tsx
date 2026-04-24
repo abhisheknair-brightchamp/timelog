@@ -37,6 +37,12 @@ export default function Home() {
 
   useEffect(() => {
     async function init() {
+      const timeoutId = setTimeout(() => {
+        console.error("Auth init timeout - forcing logout");
+        clearSession();
+        setLoading(false);
+      }, 10000); // 10 second timeout
+
       try {
         // 1. Check for an active Supabase session (handles token refresh)
         const { data: { session } } = await supabase.auth.getSession();
@@ -75,6 +81,7 @@ export default function Home() {
         console.error("Auth init error:", e);
         clearSession();
       } finally {
+        clearTimeout(timeoutId);
         setLoading(false);
       }
     }
@@ -82,16 +89,23 @@ export default function Home() {
     init();
 
     // Listen for Supabase auth state changes (e.g. token refresh, sign-out)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: AuthChangeEvent) => {
-      if (event === "SIGNED_OUT" && !isSigningOut) {
-        setIsSigningOut(true);
-        clearSession();
-        useStore.getState().logout();
-      }
-    });
+    // Only set up listener if not already signing out
+    let subscription: any = null;
+    if (!isSigningOut) {
+      const { data } = supabase.auth.onAuthStateChange((event: AuthChangeEvent) => {
+        if (event === "SIGNED_OUT" && !isSigningOut) {
+          setIsSigningOut(true);
+          clearSession();
+          useStore.getState().logout();
+        }
+      });
+      subscription = data.subscription;
+    }
 
-    return () => subscription.unsubscribe();
-  }, []);
+    return () => {
+      if (subscription) subscription.unsubscribe();
+    };
+  }, [isSigningOut]);
 
   async function handleAuthenticated(data: {
     email: string;
