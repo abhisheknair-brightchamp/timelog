@@ -36,41 +36,46 @@ export default function Home() {
 
   useEffect(() => {
     async function init() {
-      // 1. Check for an active Supabase session (handles token refresh)
-      const { data: { session } } = await supabase.auth.getSession();
+      try {
+        // 1. Check for an active Supabase session (handles token refresh)
+        const { data: { session } } = await supabase.auth.getSession();
 
-      if (session) {
-        // Fetch the user's profile for role + employeeId
-        const { data: profile } = await supabase
-          .from("user_profiles")
-          .select("role, employee_id")
-          .eq("id", session.user.id)
-          .maybeSingle();
+        if (session) {
+          // Fetch the user's profile for role + employeeId
+          const { data: profile } = await supabase
+            .from("user_profiles")
+            .select("role, employee_id")
+            .eq("id", session.user.id)
+            .maybeSingle();
 
-        if (profile) {
-          const role = profile.role || "employee";
-          const employeeId = role === "admin" ? null : profile.employee_id;
-          setAuth(session.user.email!, role, employeeId);
-          saveSession({ email: session.user.email!, role, employeeId });
-          await syncData();
+          if (profile) {
+            const role = profile.role || "employee";
+            const employeeId = role === "admin" ? null : profile.employee_id;
+            setAuth(session.user.email!, role, employeeId);
+            saveSession({ email: session.user.email!, role, employeeId });
+            await syncData();
+          } else {
+            // Profile missing — fall back to localStorage session
+            const cached = getSession();
+            if (cached) {
+              setAuth(cached.email, cached.role, cached.employeeId);
+              await syncData();
+            }
+          }
         } else {
-          // Profile missing — fall back to localStorage session
+          // No Supabase session — check localStorage fallback
           const cached = getSession();
           if (cached) {
-            setAuth(cached.email, cached.role, cached.employeeId);
-            await syncData();
+            // Stale session: clear it and force re-login
+            await clearSession();
           }
         }
-      } else {
-        // No Supabase session — check localStorage fallback
-        const cached = getSession();
-        if (cached) {
-          // Stale session: clear it and force re-login
-          clearSession();
-        }
+      } catch (e) {
+        console.error("Auth init error:", e);
+        clearSession();
+      } finally {
+        setLoading(false);
       }
-
-      setLoading(false);
     }
 
     init();
