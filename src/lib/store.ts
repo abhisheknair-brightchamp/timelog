@@ -78,6 +78,7 @@ interface AppState {
   endWorkday: (tsId: string, entries: TimesheetEntry[]) => void;
   rejectTimesheet: (tsId: string, reason: string) => void;
   reverseRejection: (tsId: string) => void;
+  adjustTimesheet: (tsId: string, hours: number) => void;
   resetShift: (tsId: string) => void;
   resetCheckin: (tsId: string) => void;
   resetCheckout: (tsId: string) => void;
@@ -160,7 +161,7 @@ export function syncTabs(store: StoreApi<AppState>) {
   if (typeof window === "undefined") return;
 
   const handler = (e: StorageEvent) => {
-    if (e.key === "timelog-v1" && e.newValue) {
+    if (e.key === "timelog-v2" && e.newValue) {
       try {
         const parsed = JSON.parse(e.newValue);
         if (parsed.state) {
@@ -273,7 +274,7 @@ export const useStore = create<AppState>()(
       config: {
         roles: ["Admin", "Instructor", "Team Lead", "Trainer"],
         verticals: ["Roblox", "Coding", "Maths", "English", "Chess"],
-        sheetsUrl: "",
+        sheetsUrl: process.env.NEXT_PUBLIC_SHEETS_URL || "",
       },
       updateConfig: (partial) =>
         set((s) => ({ config: { ...s.config, ...partial } })),
@@ -607,6 +608,31 @@ export const useStore = create<AppState>()(
         );
         sheetsPost(get().config.sheetsUrl, "reverseRejection", { id: tsId });
       },
+      adjustTimesheet: (tsId, hours) => {
+        const ts = get().timesheets.find((t) => t.id === tsId);
+        if (!ts) return;
+        set((s) => ({
+          timesheets: s.timesheets.map((t) =>
+            t.id === tsId ? { ...t, adjustedHours: hours } : t
+          ),
+        }));
+        const actorId = get().currentEmployeeId;
+        const actorName = actorId === "admin" ? "Admin" : get().employees.find((e) => e.id === actorId)?.name || actorId;
+        const emp = get().employees.find((e) => e.id === ts.employeeId);
+        get().addAudit(
+          "timesheet",
+          actorId,
+          emp?.name || ts.employeeId,
+          `Adjusted hours for ${ts.date} to ${hours.toFixed(2)}h (by ${actorName})`
+        );
+        get().addNotification(
+          ts.employeeId,
+          "reset",
+          `Your logged hours for ${ts.date} were adjusted to ${hours.toFixed(2)}h by ${actorName}`,
+          ts.date
+        );
+        sheetsPost(get().config.sheetsUrl, "adjustTimesheet", { id: tsId, adjustedHours: hours });
+      },
       resetShift: (tsId) => {
         const ts = get().timesheets.find((t) => t.id === tsId);
         if (!ts) return;
@@ -636,21 +662,10 @@ export const useStore = create<AppState>()(
       resetCheckin: (tsId) => {
         const ts = get().timesheets.find((t) => t.id === tsId);
         if (!ts) return;
-        const updated: Timesheet = {
-          ...ts,
-          startedAt: undefined,
-          endedAt: undefined,
-          totalHours: 0,
-          capturedHours: 0,
-          submitted: false,
-          submittedAt: undefined,
-          status: "in-progress",
-        };
-        set((s) => ({
-          timesheets: s.timesheets.map((t) =>
-            t.id === tsId ? updated : t
-          ),
-        }));
+        // Delete the record entirely so the employee can clock in fresh.
+        // Leaving an in-progress record with no startedAt creates a zombie
+        // that blocks startWorkday from creating a new shift.
+        set((s) => ({ timesheets: s.timesheets.filter((t) => t.id !== tsId) }));
         const actorId = get().currentEmployeeId;
         const actorName =
           actorId === "admin"
@@ -669,7 +684,7 @@ export const useStore = create<AppState>()(
           `Your check-in time for ${ts.date} was reset by ${actorName} — please clock in again`,
           ts.date
         );
-        sheetsPost(get().config.sheetsUrl, "resetCheckin", { id: tsId });
+        sheetsPost(get().config.sheetsUrl, "resetShift", { id: tsId });
       },
       resetCheckout: (tsId) => {
         const ts = get().timesheets.find((t) => t.id === tsId);
@@ -980,7 +995,7 @@ export const useStore = create<AppState>()(
                     .filter(Boolean)
                 : [],
               timezone: String(r.timezone || "Asia/Kolkata"),
-              weekoffs: r.weekoffs
+              weekoffs: (r.weekoffs !== "" && r.weekoffs !== null && r.weekoffs !== undefined)
                 ? String(r.weekoffs)
                     .split(",")
                     .map(Number)
@@ -1132,6 +1147,9 @@ export const useStore = create<AppState>()(
                 : undefined,
               rejectionReason: r.rejectionReason
                 ? String(r.rejectionReason)
+                : undefined,
+              adjustedHours: (r.adjustedHours !== "" && r.adjustedHours !== null && r.adjustedHours !== undefined)
+                ? Number(r.adjustedHours)
                 : undefined,
             }));
 

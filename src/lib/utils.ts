@@ -129,9 +129,17 @@ export function getDayStatus(
   return "future";
 }
 
-/** Authoritative worked hours for a shift — clock-in/out diff wins over any typed breakdown. */
-export function getShiftHours(ts: Pick<Timesheet, "startedAt" | "endedAt" | "capturedHours" | "totalHours" | "status">): number {
+/** Authoritative worked hours for a shift — adjustedHours (admin override) wins, then clock diff, then breakdown. */
+export function getShiftHours(ts: Pick<Timesheet, "startedAt" | "endedAt" | "capturedHours" | "totalHours" | "status" | "adjustedHours">): number {
   if (ts.status === "rejected") return 0;
+  if (typeof ts.adjustedHours === "number") return ts.adjustedHours;
+  if (ts.startedAt && ts.endedAt) return Math.max(0, (ts.endedAt - ts.startedAt) / 3600000);
+  if (typeof ts.capturedHours === "number") return ts.capturedHours;
+  return ts.totalHours || 0;
+}
+
+/** Original clocked hours before any admin adjustment. */
+export function getOriginalHours(ts: Pick<Timesheet, "startedAt" | "endedAt" | "capturedHours" | "totalHours">): number {
   if (ts.startedAt && ts.endedAt) return Math.max(0, (ts.endedAt - ts.startedAt) / 3600000);
   if (typeof ts.capturedHours === "number") return ts.capturedHours;
   return ts.totalHours || 0;
