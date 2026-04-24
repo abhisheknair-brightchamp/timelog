@@ -188,12 +188,12 @@ export default function Employees() {
           <thead>
             <tr>
               <th style={{ width: "24%" }}>Name</th>
-              <th style={{ width: "12%" }}>Role</th>
-              <th style={{ width: "26%" }}>Verticals</th>
-              <th style={{ width: "14%" }}>Week offs</th>
-              <th style={{ width: "10%" }}>Min hrs</th>
-              <th style={{ width: "8%" }}>TZ</th>
-              <th style={{ width: "6%" }}></th>
+              <th style={{ width: "11%" }}>Role</th>
+              <th style={{ width: "20%" }}>Verticals</th>
+              <th style={{ width: "13%" }}>Week offs</th>
+              <th style={{ width: "8%" }}>Min hrs</th>
+              <th style={{ width: "6%" }}>TZ</th>
+              <th style={{ width: "18%" }}></th>
             </tr>
           </thead>
           <tbody>
@@ -222,9 +222,11 @@ export default function Employees() {
                 <td style={{ fontSize: 11, color: "var(--c-text-3)" }}>
                   {TIMEZONES.find((t) => t.iana === e.timezone)?.short || "IST"}
                 </td>
-                <td style={{ display: "flex", gap: 4 }}>
-                  <Button size="xs" onClick={() => openEdit(e)}>Edit</Button>
-                  <Button size="xs" onClick={() => { setAccountFor(e); setTempPassword(""); }}>Set Password</Button>
+                <td>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                    <Button size="xs" onClick={() => openEdit(e)}>Edit</Button>
+                    <Button size="xs" onClick={() => { setAccountFor(e); setTempPassword(""); }}>Set pwd</Button>
+                  </div>
                 </td>
               </tr>
             ))}

@@ -44,16 +44,31 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, error: "Auth user not found" });
       }
     } else {
-      // Create new auth user
+      // Try to create new auth user
       const { data: created, error: createErr } = await admin.auth.admin.createUser({
         email: email.toLowerCase(),
         password: tempPassword,
         email_confirm: true,
       });
-      if (createErr || !created.user) {
-        return NextResponse.json({ ok: false, error: createErr?.message || "Failed to create user" });
+
+      if (createErr) {
+        // If user already exists in auth.users (but no profile), look them up by email
+        const { data: listData } = await admin.auth.admin.listUsers();
+        const existingAuthUser = listData?.users?.find(
+          (u) => u.email?.toLowerCase() === email.toLowerCase()
+        );
+        if (existingAuthUser) {
+          // Update their password and reuse their ID
+          await admin.auth.admin.updateUserById(existingAuthUser.id, { password: tempPassword });
+          userId = existingAuthUser.id;
+        } else {
+          return NextResponse.json({ ok: false, error: createErr.message || "Failed to create user" });
+        }
+      } else if (!created.user) {
+        return NextResponse.json({ ok: false, error: "Failed to create user" });
+      } else {
+        userId = created.user.id;
       }
-      userId = created.user.id;
     }
 
     // Upsert user_profiles with is_temp_password = true
